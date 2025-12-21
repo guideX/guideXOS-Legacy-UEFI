@@ -7,8 +7,8 @@ echo    (Using pflash method)
 echo ========================================
 echo.
 
-REM Change to the guideXOS directory
-cd /d D:\devgitlab\guideXOS\guideXOS
+REM Change to the guideXOS.UEFI directory
+cd /d D:\devgitlab\guideXOS\guideXOS.UEFI
 
 REM Verify files exist
 echo Checking files...
@@ -34,11 +34,10 @@ if not exist "ESP\kernel.elf" (
 echo   [OK] kernel.elf found
 
 if not exist "ESP\ramdisk.img" (
-    echo ERROR: ESP\ramdisk.img not found!
-    pause
-    exit /b 1
+    echo WARNING: ESP\ramdisk.img not found - continuing anyway
+) else (
+    echo   [OK] ramdisk.img found
 )
-echo   [OK] ramdisk.img found
 
 REM Create a writable copy of OVMF for variables
 if not exist "OVMF_VARS.fd" (
@@ -49,6 +48,8 @@ if not exist "OVMF_VARS.fd" (
 echo.
 echo Starting QEMU...
 echo Press Ctrl+C in this window to exit QEMU
+echo Serial output will appear below:
+echo ----------------------------------------
 echo.
 
 REM Launch QEMU using pflash (more reliable)
@@ -57,8 +58,10 @@ REM Launch QEMU using pflash (more reliable)
     -drive file=fat:rw:ESP,format=raw ^
     -m 1024M ^
     -serial stdio ^
+    -no-reboot ^
     -name "guideXOS"
 
 echo.
+echo ----------------------------------------
 echo QEMU exited.
 pause

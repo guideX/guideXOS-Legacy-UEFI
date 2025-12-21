@@ -7,7 +7,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Change to project directory
-Set-Location "D:\devgitlab\guideXOS\guideXOS"
+Set-Location "D:\devgitlab\guideXOS\guideXOS.UEFI"
 
 # Verify files exist
 Write-Host "Checking files..." -ForegroundColor Yellow
@@ -73,7 +73,7 @@ try {
         -drive file=fat:rw:ESP,format=raw `
         -m 1024M `
         -serial stdio `
-        -name "guideXOS" `
+        -name "guideXOS" -no-reboot `
         -display sdl
 } catch {
     Write-Host ""

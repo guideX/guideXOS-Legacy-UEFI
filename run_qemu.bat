@@ -6,20 +6,28 @@ echo    Booting guideXOS in QEMU
 echo ========================================
 echo.
 
-REM Change to the guideXOS directory
-cd /d D:\devgitlab\guideXOS\guideXOS
+REM Change to the guideXOS.UEFI directory (where this script lives)
+cd /d D:\devgitlab\guideXOS\guideXOS.UEFI
 
 REM Verify files exist
 echo Checking files...
 if not exist "OVMF.fd" (
-    echo ERROR: OVMF.fd not found!
-    pause
-    exit /b 1
+    REM Try to copy from guideXOS folder if it exists there
+    if exist "D:\devgitlab\guideXOS\guideXOS\OVMF.fd" (
+        copy "D:\devgitlab\guideXOS\guideXOS\OVMF.fd" "OVMF.fd"
+        echo   [OK] Copied OVMF.fd from guideXOS folder
+    ) else (
+        echo ERROR: OVMF.fd not found!
+        pause
+        exit /b 1
+    )
+) else (
+    echo   [OK] OVMF.fd found
 )
-echo   [OK] OVMF.fd found
 
 if not exist "ESP\EFI\BOOT\BOOTX64.EFI" (
     echo ERROR: ESP\EFI\BOOT\BOOTX64.EFI not found!
+    echo Run build.ps1 first to build the bootloader.
     pause
     exit /b 1
 )
@@ -33,15 +41,16 @@ if not exist "ESP\kernel.elf" (
 echo   [OK] kernel.elf found
 
 if not exist "ESP\ramdisk.img" (
-    echo ERROR: ESP\ramdisk.img not found!
-    pause
-    exit /b 1
+    echo WARNING: ESP\ramdisk.img not found - continuing anyway
+) else (
+    echo   [OK] ramdisk.img found
 )
-echo   [OK] ramdisk.img found
 
 echo.
 echo Starting QEMU...
 echo Press Ctrl+C in this window to exit QEMU
+echo Serial output will appear below:
+echo ----------------------------------------
 echo.
 
 REM Launch QEMU using pflash for UEFI firmware (more reliable)
@@ -54,5 +63,6 @@ REM Launch QEMU using pflash for UEFI firmware (more reliable)
     -name "guideXOS"
 
 echo.
+echo ----------------------------------------
 echo QEMU exited.
 pause

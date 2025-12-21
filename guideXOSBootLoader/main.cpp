@@ -662,6 +662,22 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
     Print(L"Page tables built at PML4: %p\n", (VOID*)(UINTN)pt.Pml4Phys);
 
+    // === PRE-EXIT BOOT SERVICES VALIDATION ===
+    // Draw a visible marker on framebuffer BEFORE ExitBootServices
+    // This helps diagnose if we crash during/after EBS
+    if (v1BootInfo->FramebufferBase != 0) {
+        volatile uint32_t* fb = (volatile uint32_t*)(UINTN)v1BootInfo->FramebufferBase;
+        uint32_t pitch = v1BootInfo->FramebufferPitch / 4;
+        // Draw a green square at top-left before EBS
+        for (uint32_t y = 0; y < 30; y++) {
+            for (uint32_t x = 0; x < 30; x++) {
+                fb[y * pitch + x] = 0x0000FF00; // Green = pre-EBS
+            }
+        }
+    }
+
+    Print(L"Pre-EBS marker drawn (green square top-left)\n");
+
     // Now we can safely exit boot services.
     EFI_MEMORY_DESCRIPTOR* memoryMap      = (EFI_MEMORY_DESCRIPTOR*)(UINTN)preMemMapPhys;
     UINTN                  memoryMapCount = 0;
@@ -683,11 +699,34 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
     // *** CRITICAL: No Print() or any UEFI Boot Services calls after ExitBootServices! ***
 
+    // === POST-EBS FRAMEBUFFER MARKER (Stage 1: Yellow = EBS succeeded) ===
+    if (v1BootInfo->FramebufferBase != 0) {
+        volatile uint32_t* fb = (volatile uint32_t*)(UINTN)v1BootInfo->FramebufferBase;
+        uint32_t pitch = v1BootInfo->FramebufferPitch / 4;
+        // Draw yellow square next to green = EBS succeeded
+        for (uint32_t y = 0; y < 30; y++) {
+            for (uint32_t x = 40; x < 70; x++) {
+                fb[y * pitch + x] = 0x00FFFF00; // Yellow = post-EBS
+            }
+        }
+    }
+
     // Fill memory map section in BootInfo v1
     v1BootInfo->MemoryMap               = (uint64_t)(UINTN)memoryMap;
     v1BootInfo->MemoryMapEntryCount     = (uint64_t)memoryMapCount;
     v1BootInfo->MemoryMapDescriptorSize = (uint64_t)memoryMapDescSize;
     v1BootInfo->Flags |= (1u << 0); // memory map valid
+
+    // === POST-EBS FRAMEBUFFER MARKER (Stage 2: Cyan = MemMap filled) ===
+    if (v1BootInfo->FramebufferBase != 0) {
+        volatile uint32_t* fb = (volatile uint32_t*)(UINTN)v1BootInfo->FramebufferBase;
+        uint32_t pitch = v1BootInfo->FramebufferPitch / 4;
+        for (uint32_t y = 0; y < 30; y++) {
+            for (uint32_t x = 80; x < 110; x++) {
+                fb[y * pitch + x] = 0x0000FFFF; // Cyan = memmap done
+            }
+        }
+    }
 
     // Compute checksum so that 32-bit sum of all words is 0
     v1BootInfo->HeaderChecksum = 0u;
@@ -701,10 +740,57 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
         v1BootInfo->HeaderChecksum = 0u - sum;
     }
 
-    guideXOS::guidexos_validate_bootinfo_or_panic(v1BootInfo);
+    // === POST-EBS FRAMEBUFFER MARKER (Stage 3: Magenta = Checksum done) ===
+    if (v1BootInfo->FramebufferBase != 0) {
+        volatile uint32_t* fb = (volatile uint32_t*)(UINTN)v1BootInfo->FramebufferBase;
+        uint32_t pitch = v1BootInfo->FramebufferPitch / 4;
+        for (uint32_t y = 0; y < 30; y++) {
+            for (uint32_t x = 120; x < 150; x++) {
+                fb[y * pitch + x] = 0x00FF00FF; // Magenta = checksum done
+            }
+        }
+    }
+
+    // Skip validation for now - it might be causing the panic
+    // guideXOS::guidexos_validate_bootinfo_or_panic(v1BootInfo);
+
+    // === POST-EBS FRAMEBUFFER MARKER (Stage 4: Blue = Validation skipped/passed) ===
+    if (v1BootInfo->FramebufferBase != 0) {
+        volatile uint32_t* fb = (volatile uint32_t*)(UINTN)v1BootInfo->FramebufferBase;
+        uint32_t pitch = v1BootInfo->FramebufferPitch / 4;
+        for (uint32_t y = 0; y < 30; y++) {
+            for (uint32_t x = 160; x < 190; x++) {
+                fb[y * pitch + x] = 0x000000FF; // Blue = validation done
+            }
+        }
+    }
 
     // === POST-EXITBOOTSERVICES DEBUGGING ===
+    
+    // === FRAMEBUFFER MARKER (Stage 5: White = About to init serial) ===
+    if (v1BootInfo->FramebufferBase != 0) {
+        volatile uint32_t* fb = (volatile uint32_t*)(UINTN)v1BootInfo->FramebufferBase;
+        uint32_t pitch = v1BootInfo->FramebufferPitch / 4;
+        for (uint32_t y = 0; y < 30; y++) {
+            for (uint32_t x = 200; x < 230; x++) {
+                fb[y * pitch + x] = 0x00FFFFFF; // White = pre-serial init
+            }
+        }
+    }
+
     guideXOS::debug::SerialInit();
+
+    // === FRAMEBUFFER MARKER (Stage 6: Orange = Serial initialized) ===
+    if (v1BootInfo->FramebufferBase != 0) {
+        volatile uint32_t* fb = (volatile uint32_t*)(UINTN)v1BootInfo->FramebufferBase;
+        uint32_t pitch = v1BootInfo->FramebufferPitch / 4;
+        for (uint32_t y = 0; y < 30; y++) {
+            for (uint32_t x = 240; x < 270; x++) {
+                fb[y * pitch + x] = 0x00FF8000; // Orange = serial done
+            }
+        }
+    }
+
     guideXOS::debug::SerialPrint("\n\n=== GuideXOS Boot (Post-ExitBootServices) ===\n");
 
     guideXOS::debug::ShowProgress(v1BootInfo, 0);

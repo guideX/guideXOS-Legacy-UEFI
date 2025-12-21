@@ -241,7 +241,7 @@ if (-not $SkipBootloader) {
     Write-Info "Building with MSBuild..."
     & $msbuild $BootloaderProject `
         /p:Configuration=Release `
-        /p:Platform=x64 `
+        /p:Platform=x64 /p:IntDir=x64\Release\build\ `
         /v:minimal `
         /nologo
     

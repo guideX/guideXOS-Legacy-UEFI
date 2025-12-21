@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -88,7 +88,7 @@
     <ClCompile Include="fb_console.cpp" />
     <ClCompile Include="guidexOSBootInfo_validation.cpp" />
     <ClCompile Include="trampoline_msvc.cpp">
-      <ExcludedFromBuild xmlns="">true</ExcludedFromBuild>
+      <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="uefi_guids.cpp" />
     <ClCompile Include="paging.cpp" />
