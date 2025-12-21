@@ -777,11 +777,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\devgitlab\\guideXOS\\guideXOS\\guideXOS\\guideXOS.csproj",
+      "projectUniqueName": "D:\\devgitlab\\guideXOS\\guideXOS.UEFI\\guideXOS\\guideXOS.csproj",
       "projectName": "guideXOS",
-      "projectPath": "D:\\devgitlab\\guideXOS\\guideXOS\\guideXOS\\guideXOS.csproj",
+      "projectPath": "D:\\devgitlab\\guideXOS\\guideXOS.UEFI\\guideXOS\\guideXOS.csproj",
       "packagesPath": "C:\\Users\\DarthguideX\\.nuget\\packages\\",
-      "outputPath": "D:\\devgitlab\\guideXOS\\guideXOS\\guideXOS\\obj\\",
+      "outputPath": "D:\\devgitlab\\guideXOS\\guideXOS.UEFI\\guideXOS\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "IHpgkzNgMZ4=",
+  "dgSpecHash": "KdZOpRw12c0=",
   "success": true,
-  "projectFilePath": "D:\\devgitlab\\guideXOS\\guideXOS\\guideXOS\\guideXOS.csproj",
+  "projectFilePath": "D:\\devgitlab\\guideXOS\\guideXOS.UEFI\\guideXOS\\guideXOS.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\DarthguideX\\.nuget\\packages\\microsoft.dotnet.ilcompiler\\7.0.0-alpha.1.22074.1\\microsoft.dotnet.ilcompiler.7.0.0-alpha.1.22074.1.nupkg.sha512",
     "C:\\Users\\DarthguideX\\.nuget\\packages\\microsoft.net.illink.analyzers\\7.0.100-1.23211.1\\microsoft.net.illink.analyzers.7.0.100-1.23211.1.nupkg.sha512",
