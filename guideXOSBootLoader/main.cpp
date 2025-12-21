@@ -484,6 +484,23 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     void* stackTop = nullptr;
     if (!EFI_ERROR(stackStatus)) {
         stackTop = (void*)(UINTN)((stackPhys + stackPages * EFI_PAGE_SIZE) & ~0xFULL); // 16-byte align
+        Print(L"Stack allocated at %p, top at %p\n", (VOID*)(UINTN)stackPhys, stackTop);
+    } else {
+        Print(L"WARNING: Stack allocation failed with status %r, trying fallback...\n", stackStatus);
+        // Fallback: allocate anywhere
+        stackPhys = 0;
+        stackStatus = SystemTable->BootServices->AllocatePages(
+            AllocateAnyPages,
+            EfiLoaderData,
+            stackPages,
+            &stackPhys
+        );
+        if (!EFI_ERROR(stackStatus)) {
+            stackTop = (void*)(UINTN)((stackPhys + stackPages * EFI_PAGE_SIZE) & ~0xFULL);
+            Print(L"Stack fallback allocated at %p, top at %p\n", (VOID*)(UINTN)stackPhys, stackTop);
+        } else {
+            Print(L"FATAL: Could not allocate stack!\n");
+        }
     }
 
     // --- Allocate executable trampoline buffer that survives ExitBootServices ---
@@ -630,6 +647,14 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     ranges[rangeCount] = trampolinePhys;
     sizes[rangeCount] = trampolinePages * EFI_PAGE_SIZE;
     rangeCount++;
+
+    // 11. CRITICAL: Map the allocator region the kernel will use
+    // The kernel's Allocator.Initialize() uses 0x4000000 (64MB) as the base
+    // Map a large region starting there for heap allocations
+    ranges[rangeCount] = 0x4000000ULL;  // 64MB
+    sizes[rangeCount] = 64u * 1024u * 1024u; // 64MB of heap space
+    rangeCount++;
+    Print(L"Mapping allocator region: 0x4000000 size 64MB\n");
 
     Print(L"Building identity page tables with %u ranges...\n", (UINT32)rangeCount);
 

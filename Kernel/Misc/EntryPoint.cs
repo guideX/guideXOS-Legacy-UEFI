@@ -9,19 +9,20 @@ namespace guideXOS.Misc {
 /// Entry Point
 /// </summary>
 internal static unsafe class EntryPoint {
+    // Import the module table accessor from native_stubs.asm
+    // This returns the address of the __Module symbol which contains the NativeAOT module table
+    [DllImport("*", EntryPoint = "__modules_a")]
+    private static extern IntPtr GetModulesPointer();
+    
     /// <summary>
     /// NEW UEFI entry point called from UEFI bootloader
     /// This is the modern entry point that receives guideXOS::BootInfo
     /// 
     /// NOTE: The UEFI bootloader uses Microsoft x64 ABI (parameter in RCX).
     /// This should match since we're building for Windows x64.
-    /// 
-    /// UnmanagedCallersOnly ensures the function has a proper native entry point
-    /// without any managed code preamble that might cause issues.
     /// </summary>
     /// <param name="bootInfo">UEFI boot information structure</param>
         [RuntimeExport("KMain")]
-        [UnmanagedCallersOnly(EntryPoint = "KMain")]
         public static void KMain(UefiBootInfo* bootInfo) {
             // CRITICAL FIX: The bootloader's stack overlaps with kernel memory!
             // Stack top: 0x3D785000, Kernel start: 0x3D785000
@@ -104,7 +105,10 @@ internal static unsafe class EntryPoint {
             }
             
             // STEP 5: Initialize modules (required for NativeAOT runtime)
-            StartupCodeHelpers.InitializeModules((IntPtr)0);
+            // CRITICAL: Must get the actual module pointer, not null!
+            // The __modules_a function returns the address of the NativeAOT module table
+            IntPtr modulesPtr = GetModulesPointer();
+            StartupCodeHelpers.InitializeModules(modulesPtr);
             
             // STEP 6: Draw cyan line after modules initialized
             if (bootInfo->FramebufferBase != 0) {
