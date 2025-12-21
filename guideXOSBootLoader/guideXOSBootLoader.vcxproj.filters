@@ -33,6 +33,12 @@
     <ClCompile Include="intrinsics.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="paging.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="trampoline_msvc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bootinfo.h">
@@ -56,5 +62,17 @@
     <ClInclude Include="debug_helpers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="paging.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="boot_diagnostics.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="trampoline.asm">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="BOOTLOADER_ANALYSIS.md" />
   </ItemGroup>
 </Project>

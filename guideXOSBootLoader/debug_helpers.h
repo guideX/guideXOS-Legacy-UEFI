@@ -203,5 +203,129 @@ static inline void ValidateKernelEntry(uint64_t entryPhys, const BootInfo* bi) {
     }
 }
 
+// Dump register state for diagnostics
+// Note: MSVC doesn't support inline assembly in x64, so we use intrinsics
+static inline void DumpRegisters() {
+    SerialPrint("\n=== Register Dump ===\n");
+    
+    // For RSP, we can get it indirectly through a function call
+    // This gives an approximate value
+    uint64_t rsp;
+    volatile char stackVar;
+    rsp = (uint64_t)(uintptr_t)&stackVar;
+    
+    SerialPrint("RSP (approx) = "); SerialPrintHex64(rsp); SerialPrint("\n");
+    
+    // Check stack alignment (best effort)
+    if ((rsp & 0xF) < 8) {
+        SerialPrint("  [INFO] Stack appears reasonably aligned\n");
+    } else {
+        SerialPrint("  [WARN] Stack may not be 16-byte aligned\n");
+    }
+}
+
+// Validate page table entry for an address
+static inline void ValidatePageMapping(uint64_t pml4Phys, uint64_t vaddr) {
+    SerialPrint("Checking mapping for: "); SerialPrintHex64(vaddr); SerialPrint("\n");
+    
+    uint64_t* pml4 = (uint64_t*)(uintptr_t)pml4Phys;
+    
+    uint64_t pml4i = (vaddr >> 39) & 0x1FF;
+    uint64_t pdpti = (vaddr >> 30) & 0x1FF;
+    uint64_t pdi   = (vaddr >> 21) & 0x1FF;
+    uint64_t pti   = (vaddr >> 12) & 0x1FF;
+    
+    SerialPrint("  PML4["); SerialPrintHex32((uint32_t)pml4i); SerialPrint("] = ");
+    SerialPrintHex64(pml4[pml4i]); SerialPrint("\n");
+    
+    if (!(pml4[pml4i] & 1)) {
+        SerialPrint("  [FAIL] PML4 entry not present!\n");
+        return;
+    }
+    
+    uint64_t* pdpt = (uint64_t*)(uintptr_t)(pml4[pml4i] & ~0xFFFULL);
+    SerialPrint("  PDPT["); SerialPrintHex32((uint32_t)pdpti); SerialPrint("] = ");
+    SerialPrintHex64(pdpt[pdpti]); SerialPrint("\n");
+    
+    if (!(pdpt[pdpti] & 1)) {
+        SerialPrint("  [FAIL] PDPT entry not present!\n");
+        return;
+    }
+    
+    // Check for 1GB page
+    if (pdpt[pdpti] & 0x80) {
+        SerialPrint("  [OK] 1GB page present\n");
+        return;
+    }
+    
+    uint64_t* pd = (uint64_t*)(uintptr_t)(pdpt[pdpti] & ~0xFFFULL);
+    SerialPrint("  PD["); SerialPrintHex32((uint32_t)pdi); SerialPrint("] = ");
+    SerialPrintHex64(pd[pdi]); SerialPrint("\n");
+    
+    if (!(pd[pdi] & 1)) {
+        SerialPrint("  [FAIL] PD entry not present!\n");
+        return;
+    }
+    
+    // Check for 2MB page
+    if (pd[pdi] & 0x80) {
+        SerialPrint("  [OK] 2MB page present\n");
+        return;
+    }
+    
+    uint64_t* pt = (uint64_t*)(uintptr_t)(pd[pdi] & ~0xFFFULL);
+    SerialPrint("  PT["); SerialPrintHex32((uint32_t)pti); SerialPrint("] = ");
+    SerialPrintHex64(pt[pti]); SerialPrint("\n");
+    
+    if (!(pt[pti] & 1)) {
+        SerialPrint("  [FAIL] PT entry not present!\n");
+        return;
+    }
+    
+    uint64_t physAddr = pt[pti] & ~0xFFFULL;
+    SerialPrint("  [OK] Maps to physical: "); SerialPrintHex64(physAddr); SerialPrint("\n");
+}
+
+// Comprehensive pre-jump validation
+static inline void ValidateHandoff(uint64_t entryPhys, const BootInfo* bi, uint64_t stackTop, uint64_t pml4Phys) {
+    SerialPrint("\n========================================\n");
+    SerialPrint("=== PRE-HANDOFF VALIDATION ===\n");
+    SerialPrint("========================================\n");
+    
+    SerialPrint("\n--- Parameters ---\n");
+    SerialPrint("Kernel Entry: "); SerialPrintHex64(entryPhys); SerialPrint("\n");
+    SerialPrint("BootInfo:     "); SerialPrintHex64((uint64_t)(uintptr_t)bi); SerialPrint("\n");
+    SerialPrint("Stack Top:    "); SerialPrintHex64(stackTop); SerialPrint("\n");
+    SerialPrint("PML4 Phys:    "); SerialPrintHex64(pml4Phys); SerialPrint("\n");
+    
+    SerialPrint("\n--- Validating Mappings ---\n");
+    
+    // Validate kernel entry is mapped
+    SerialPrint("\n[1] Kernel Entry:\n");
+    ValidatePageMapping(pml4Phys, entryPhys);
+    
+    // Validate BootInfo is mapped
+    SerialPrint("\n[2] BootInfo:\n");
+    ValidatePageMapping(pml4Phys, (uint64_t)(uintptr_t)bi);
+    
+    // Validate stack is mapped
+    SerialPrint("\n[3] Stack (top - 0x1000):\n");
+    ValidatePageMapping(pml4Phys, stackTop - 0x1000);
+    
+    // Validate PML4 itself is mapped (critical!)
+    SerialPrint("\n[4] PML4 self-mapping:\n");
+    ValidatePageMapping(pml4Phys, pml4Phys);
+    
+    // Validate framebuffer if present
+    if (bi && (bi->Flags & 0x2) && bi->FramebufferBase != 0) {
+        SerialPrint("\n[5] Framebuffer:\n");
+        ValidatePageMapping(pml4Phys, bi->FramebufferBase);
+    }
+    
+    SerialPrint("\n========================================\n");
+    SerialPrint("=== VALIDATION COMPLETE ===\n");
+    SerialPrint("========================================\n\n");
+}
+
 } // namespace debug
 } // namespace guideXOS

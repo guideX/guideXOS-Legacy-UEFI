@@ -87,6 +87,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="fb_console.cpp" />
     <ClCompile Include="guidexOSBootInfo_validation.cpp" />
+    <ClCompile Include="trampoline_msvc.cpp" />
     <ClCompile Include="uefi_guids.cpp" />
     <ClCompile Include="paging.cpp" />
     <ClCompile Include="intrinsics.cpp">
@@ -94,9 +95,9 @@
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/Oi- %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
   </ItemGroup>
-
   <ItemGroup>
     <ClInclude Include="bootinfo.h" />
+    <ClInclude Include="boot_diagnostics.h" />
     <ClInclude Include="debug_helpers.h" />
     <ClInclude Include="elf.h" />
     <ClInclude Include="acpi.h" />
@@ -105,21 +106,21 @@
     <ClInclude Include="uefi_shim.h" />
     <ClInclude Include="paging.h" />
   </ItemGroup>
-
+  <ItemGroup>
+    <None Include="BOOTLOADER_ANALYSIS.md" />
+    <None Include="trampoline.asm" />
+  </ItemGroup>
   <Target Name="AssembleHandoffTrampoline" BeforeTargets="Link">
     <PropertyGroup>
       <_NasmExe Condition="Exists('$(SolutionDir)Tools\nasm.exe')">$(SolutionDir)Tools\nasm.exe</_NasmExe>
       <_NasmExe Condition="'$(_NasmExe)'=='' and Exists('$(MSBuildStartupDirectory)\Tools\nasm.exe')">$(MSBuildStartupDirectory)\Tools\nasm.exe</_NasmExe>
       <_NasmExe Condition="'$(_NasmExe)'==''">nasm</_NasmExe>
     </PropertyGroup>
-
     <Message Text="[Native] Assembling handoff trampoline via NASM: $(_NasmExe)" Importance="high" />
     <Exec Command="&quot;$(_NasmExe)&quot; -f win64 &quot;$(ProjectDir)handoff_trampoline.asm&quot; -o &quot;$(IntDir)handoff_trampoline.obj&quot;" />
-
     <ItemGroup>
       <Link Include="$(IntDir)handoff_trampoline.obj" />
     </ItemGroup>
   </Target>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

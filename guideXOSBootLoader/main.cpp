@@ -517,9 +517,9 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     const EFI_PHYSICAL_ADDRESS kernelPhysBase = (EFI_PHYSICAL_ADDRESS)kernelBase;
     const UINTN kernelSpanBytes = (kernelTotalSize != 0) ? (UINTN)kernelTotalSize : (64u * 1024u * 1024u);
 
-    // Use a dynamic array for ranges (max 16 should be plenty)
-    EFI_PHYSICAL_ADDRESS ranges[16];
-    UINTN sizes[16];
+    // Use a dynamic array for ranges (max 20 should be plenty)
+    EFI_PHYSICAL_ADDRESS ranges[20];
+    UINTN sizes[20];
     UINTN rangeCount = 0;
 
     // 1. Low 1MB for legacy compatibility
@@ -572,6 +572,36 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
         sizes[rangeCount] = EFI_PAGE_SIZE * 4; // Map a few pages for RSDP + nearby tables
         rangeCount++;
         Print(L"Mapping ACPI RSDP region: %p\n", (VOID*)(UINTN)rsdp);
+    }
+
+    // 9. CRITICAL: Map the bootloader/trampoline code region
+    // After we load CR3 with new page tables, the CPU is still executing in the
+    // trampoline code. If that code isn't mapped, we triple-fault immediately!
+    // We need to identity-map the bootloader's loaded image.
+    {
+        EFI_LOADED_IMAGE_PROTOCOL* LoadedImage = nullptr;
+        EFI_STATUS st = SystemTable->BootServices->HandleProtocol(
+            ImageHandle, 
+            &gEfiLoadedImageProtocolGuid, 
+            (void**)&LoadedImage);
+        
+        if (!EFI_ERROR(st) && LoadedImage != nullptr) {
+            EFI_PHYSICAL_ADDRESS loaderBase = (EFI_PHYSICAL_ADDRESS)(UINTN)LoadedImage->ImageBase;
+            UINTN loaderSize = LoadedImage->ImageSize;
+            
+            // Ensure we map at least the whole image
+            if (loaderSize < EFI_PAGE_SIZE * 16) {
+                loaderSize = EFI_PAGE_SIZE * 16; // At least 64KB
+            }
+            
+            ranges[rangeCount] = loaderBase;
+            sizes[rangeCount] = loaderSize;
+            rangeCount++;
+            Print(L"Mapping bootloader: %p size %Lu\n", (VOID*)(UINTN)loaderBase, (UINT64)loaderSize);
+        } else {
+            // Fallback: try to use the current instruction pointer region
+            Print(L"Warning: Could not get loaded image info for bootloader mapping\n");
+        }
     }
 
     Print(L"Building identity page tables with %u ranges...\n", (UINT32)rangeCount);
@@ -667,6 +697,14 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
     guideXOS::debug::SerialPrint("\n=== Jumping to Kernel (Trampoline) ===\n");
     guideXOS::debug::ShowProgress(v1BootInfo, 4);
+
+    // Comprehensive validation before handoff
+    guideXOS::debug::ValidateHandoff(
+        entryPhys, 
+        v1BootInfo, 
+        (uint64_t)(UINTN)stackTop, 
+        pt.Pml4Phys
+    );
 
     guideXOS::debug::SerialPrint("[BOOT] About to handoff via trampoline...\n");
     guideXOS::debug::ShowProgress(v1BootInfo, 5);

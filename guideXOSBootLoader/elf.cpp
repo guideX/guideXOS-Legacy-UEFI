@@ -172,7 +172,36 @@ EFI_STATUS LoadElf(
     // Entry is at: e_entry (virtual) -> physBase + (e_entry - minLoadVaddr)
     UINT64 entryOffset = ehdr.e_entry - minLoadVaddr;
 
-    Print((CONST CHAR16*)L"ELF: Entry vaddr=0x%lx, offset=0x%lx\n", ehdr.e_entry, entryOffset);
+    // Validate that entry point is within loaded segments
+    bool entryValid = false;
+    for (UINT16 i = 0; i < ehdr.e_phnum; ++i) {
+        Elf64_Phdr* ph = (Elf64_Phdr*)((UINT8*)phdrs + i * ehdr.e_phentsize);
+        if (ph->p_type != PT_LOAD || ph->p_memsz == 0) continue;
+        
+        if (ehdr.e_entry >= ph->p_vaddr && 
+            ehdr.e_entry < ph->p_vaddr + ph->p_memsz) {
+            entryValid = true;
+            Print((CONST CHAR16*)L"ELF: Entry point in segment %u (vaddr 0x%lx)\n", 
+                  (UINT32)i, ph->p_vaddr);
+            break;
+        }
+    }
+    
+    if (!entryValid) {
+        Print((CONST CHAR16*)L"ELF: WARNING - Entry point 0x%lx not in any PT_LOAD segment!\n", 
+              ehdr.e_entry);
+    }
+
+    // Validate entry offset is within allocated size
+    if (entryOffset >= totalSize) {
+        Print((CONST CHAR16*)L"ELF: ERROR - Entry offset 0x%lx exceeds total size 0x%lx\n",
+              entryOffset, totalSize);
+        LocalFreePool(SystemTable, phdrs, phTableSize);
+        return EFI_LOAD_ERROR;
+    }
+
+    Print((CONST CHAR16*)L"ELF: Entry vaddr=0x%lx, offset=0x%lx, physEntry=0x%lx\n", 
+          ehdr.e_entry, entryOffset, physBase + entryOffset);
 
     *kernelBase        = (UINT64)physBase;
     *kernelEntryOffset = entryOffset;
