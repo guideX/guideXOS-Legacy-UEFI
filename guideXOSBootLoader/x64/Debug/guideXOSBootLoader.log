@@ -1,0 +1,13 @@
+﻿cl : command line  warning D9025: overriding '/sdl' with '/GS-'
+  elf.cpp
+D:\devgitlab\guideXOS\guideXOS\edk2-master\MdePkg\Include\Base.h(1340,21): warning C4162: '_ReturnAddress': no function with C linkage found
+  (compiling source file 'elf.cpp')
+  
+  main.cpp
+D:\devgitlab\guideXOS\guideXOS\edk2-master\MdePkg\Include\Base.h(1340,21): warning C4162: '_ReturnAddress': no function with C linkage found
+  (compiling source file 'main.cpp')
+  
+  Generating Code...
+  [Native] Assembling handoff trampoline via NASM: D:\devgitlab\guideXOS\guideXOS\Tools\nasm.exe
+LINK : warning LNK4075: ignoring '/INCREMENTAL' due to '/RELEASE' specification
+  guideXOSBootLoader.vcxproj -> D:\devgitlab\guideXOS\guideXOS\x64\Debug\guideXOSBootLoader.exe

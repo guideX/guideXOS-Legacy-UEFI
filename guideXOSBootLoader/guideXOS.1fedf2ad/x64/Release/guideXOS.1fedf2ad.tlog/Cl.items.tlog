@@ -1,0 +1,7 @@
+D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\elf.cpp;D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\guideXOS.1fedf2ad\x64\Release\elf.obj
+D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\main.cpp;D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\guideXOS.1fedf2ad\x64\Release\main.obj
+D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\fb_console.cpp;D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\guideXOS.1fedf2ad\x64\Release\fb_console.obj
+D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\guidexOSBootInfo_validation.cpp;D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\guideXOS.1fedf2ad\x64\Release\guidexOSBootInfo_validation.obj
+D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\uefi_guids.cpp;D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\guideXOS.1fedf2ad\x64\Release\uefi_guids.obj
+D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\paging.cpp;D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\guideXOS.1fedf2ad\x64\Release\paging.obj
+D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\intrinsics.cpp;D:\devgitlab\guideXOS\guideXOS\guideXOSBootLoader\guideXOS.1fedf2ad\x64\Release\intrinsics.obj
