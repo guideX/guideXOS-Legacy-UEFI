@@ -1,0 +1,113 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MSBuildAllProjects Condition="'$(MSBuildVersion)' == '' Or '$(MSBuildVersion)' &lt; '16.0'">$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <SharedGUID>066034bc-37fe-4605-8bdb-c525ec29dbe4</SharedGUID>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <Import_RootNamespace>guideXOS.Kernel</Import_RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Animation.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)API.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)AVX.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\AC97.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\ACPI.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\ACPITimer.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\Display.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\EHCI.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\ES1371.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\Framebuffer.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\HID.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\HPET.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\Hub.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\IDE.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\IOAPIC.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\Keyboard.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\LocalAPIC.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\LocalAPICTimer.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\PCI.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\PCIExpress.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\PIC.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\PIT.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\Power.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\PS2Controller.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\PS2Keyboard.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\PS2Mouse.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\Ramdisk.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\RTC.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\SATA.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\Serial.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\SMBIOS.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\Timer.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\USBMSC.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\USBMSCBot.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\VMWareSVGAII.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\VMwareTools.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FS\AutoFS.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FS\CloudFS.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FS\Disk.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FS\EXT2.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FS\FAT.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FS\FileSystem.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FS\NTFS.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FS\TarFS.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Graph\Graphics.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Graph\VMWareSVGAIIGraphics.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Helpers\StringHelper.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Kbd2Mouse.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\Allocator.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\ArchTest.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\ASC16.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\Audio.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\BitFont.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\Bitmap.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\BootSplash.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\ClassID.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\Console.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\CPUID.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\CPUID_Safe.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\EntryPoint.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\FPSMeter.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\GDT.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\GXMLoader.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\IDT.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\IFont.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\Interrupts.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\MMIO.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\Multiboot.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\Native.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\PageTable.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\Panic.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\PNG.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\Process.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\SchedulerExtensions.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\SHA256.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\SVG.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\Threading.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\USB.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\USBStorage.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\UserDemo.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\UserModeStub.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\VendorID.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\WAV.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Network\Http.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Network\Intel825xx.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Network\Json.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Network\NETv4.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Network\RTL8111.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\AES.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SMP.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SSE.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Libraries\stdio.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Libraries\stdlib.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Structs\BufferDescriptor.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="$(MSBuildThisFileDirectory)Libraries\" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)Drivers\Directory.Build.props" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,179 @@
+using guideXOS;
+using guideXOS.Kernel.Drivers;
+using guideXOS.Kernel.Helpers;
+using guideXOS.Misc;
+using Internal.Runtime.CompilerServices;
+using System.Runtime;
+using System.Runtime.InteropServices;
+using static Internal.Runtime.CompilerHelpers.InteropHelpers;
+
+public static class IDT {
+    [DllImport("*")]
+    private static extern unsafe void set_idt_entries(void* idt);
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct IDTEntry {
+        public ushort BaseLow;
+        public ushort Selector;
+        public byte Reserved0;
+        public byte Type_Attributes;
+        public ushort BaseMid;
+        public uint BaseHigh;
+        public uint Reserved1;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct IDTDescriptor {
+        public ushort Limit;
+        public ulong Base;
+    }
+
+    private static IDTEntry[] idt;
+    public static IDTDescriptor idtr;
+
+
+    public static bool Initialized { get; private set; }
+
+
+    public static unsafe bool Initialize() {
+        idt = new IDTEntry[256];
+
+        set_idt_entries(Unsafe.AsPointer(ref idt[0]));
+
+        fixed (IDTEntry* _idt = idt) {
+            idtr.Limit = (ushort)((sizeof(IDTEntry) * 256) - 1);
+            idtr.Base = (ulong)_idt;
+        }
+
+        Native.Load_IDT(ref idtr);
+
+        Initialized = true;
+        return true;
+    }
+
+    public static void Enable() {
+        Native.Sti();
+    }
+
+    public static void Disable() {
+        Native.Cli();
+    }
+
+    public static unsafe void AllowUserSoftwareInterrupt(byte vector) {
+        if (!Initialized) return;
+        // Set DPL=3 for the given vector gate to allow int from ring3
+        fixed (IDTEntry* p = idt) {
+            IDTEntry* e = &p[vector];
+            // Type 0xEE? preserve type, set DPL bits (bits 5-6) to 3 and Present bit
+            e->Type_Attributes = (byte)((e->Type_Attributes & 0x9F) | (3 << 5) | 0x80);
+        }
+        Native.Load_IDT(ref idtr);
+    }
+
+    public struct RegistersStack {
+        public ulong rax;
+        public ulong rcx;
+        public ulong rdx;
+        public ulong rbx;
+        public ulong rsi;
+        public ulong rdi;
+        public ulong r8;
+        public ulong r9;
+        public ulong r10;
+        public ulong r11;
+        public ulong r12;
+        public ulong r13;
+        public ulong r14;
+        public ulong r15;
+    }
+
+    //https://os.phil-opp.com/returning-from-exceptions/
+    public struct InterruptReturnStack {
+        public ulong rip;
+        public ulong cs;
+        public ulong rflags;
+        public ulong rsp;
+        public ulong ss;
+    }
+
+    public struct IDTStackGeneric {
+        public RegistersStack rs;
+        public ulong errorCode;
+        public InterruptReturnStack irs;
+    }
+
+    [RuntimeExport("intr_handler")]
+    public static unsafe void intr_handler(int irq, IDTStackGeneric* stack) {
+        if (irq < 0x20) {
+            // Compute correct location of InterruptReturnStack depending on whether the CPU pushed an error code
+            InterruptReturnStack* irs;
+            bool hasErrorCode = false;
+            switch (irq) {
+                case 8:
+                case 10:
+                case 11:
+                case 12:
+                case 13:
+                case 14:
+                case 17:
+                case 21:
+                case 29:
+                case 30:
+                    // Exceptions that push an error code: irs follows RegistersStack + errorCode
+                    irs = (InterruptReturnStack*)(((byte*)stack) + sizeof(RegistersStack) + sizeof(ulong));
+                    hasErrorCode = true;
+                    break;
+                default:
+                    // No error code pushed: irs follows only RegistersStack
+                    irs = (InterruptReturnStack*)(((byte*)stack) + sizeof(RegistersStack));
+                    hasErrorCode = false;
+                    break;
+            }
+
+            // Display enhanced graphical panic screen
+            Panic.ShowEnhancedCrashScreen(
+                irq,
+                stack->errorCode,
+                hasErrorCode,
+                &stack->rs,
+                irs,
+                null
+            );
+            
+            // This code should never be reached, but keep for safety
+            for (; ; ) Native.Hlt();
+        }
+
+        //DEAD
+        if (irq == 0xFD) {
+            Native.Cli();
+            Native.Hlt();
+            for (; ; ) Native.Hlt();
+        }
+
+        //For main processor
+        if (SMP.ThisCPU == 0) {
+            //System calls
+            if (irq == 0x80) {
+                var pCell = (MethodFixupCell*)stack->rs.rcx;
+                string name = string.FromASCII(pCell->Module->ModuleName, StringHelper.StringLength((byte*)pCell->Module->ModuleName));
+                stack->rs.rax = (ulong)API.HandleSystemCall(name);
+                name.Dispose();
+            }
+            switch (irq) {
+                case 0x20:
+                    //misc.asm Schedule_Next
+                    if (stack->rs.rdx != 0x61666E6166696E)
+                        Timer.OnInterrupt();
+                    break;
+            }
+            Interrupts.HandleInterrupt(irq);
+        }
+
+        if (irq == 0x20) {
+            ThreadPool.Schedule(stack);
+        }
+
+        Interrupts.EndOfInterrupt((byte)irq);
+    }
+}

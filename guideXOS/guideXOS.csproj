@@ -1,0 +1,230 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net7.0</TargetFramework>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<BaseOutputPath>..\bin</BaseOutputPath>
+
+		<!-- Explicitly target x64 architecture for AMD64 compatibility -->
+		<PlatformTarget>x64</PlatformTarget>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<Prefer32Bit>false</Prefer32Bit>
+
+		<Optimize>true</Optimize>
+		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+		<GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+		<ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+
+		<DefineConstants>Kernel;UseAPIC;NETWORK;X64</DefineConstants>
+
+		<IlcSystemModule>guideXOS</IlcSystemModule>
+		<EntryPointSymbol>Entry</EntryPointSymbol>
+		<LinkerSubsystem>NATIVE</LinkerSubsystem>
+		<!--Make the code faster!-->
+		<IlcOptimizationPreference>Size</IlcOptimizationPreference>
+		<!-- Allow skipping ISO build to avoid lock issues -->
+		<SkipISO Condition="'$(SkipISO)'==''">false</SkipISO>
+	</PropertyGroup>
+
+	<Target Name="PrepareForILLink">
+	</Target>
+
+	<!--CustomizeReferences-->
+	<Target Name="CustomizeReferences" BeforeTargets="BeforeCompile" AfterTargets="FindReferenceAssembliesForReferences">
+		<ItemGroup>
+			<ReferencePathWithRefAssemblies Remove="@(ReferencePathWithRefAssemblies)" Condition="%(Filename) != 'Corlib'" />
+			<ReferencePath Remove="@(ReferencePath)" />
+		</ItemGroup>
+	</Target>
+	<ItemGroup>
+	  <Compile Remove="Portable\**" />
+	  <EmbeddedResource Remove="Portable\**" />
+	  <None Remove="Portable\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Only include native libs if they exist locally to avoid LNK1181 in environments without them -->
+		<NativeLibrary Include="$(MSBuildStartupDirectory)\..\x64\Debug\NativeLib.lib" Condition="Exists('$(MSBuildStartupDirectory)\..\x64\Debug\NativeLib.lib')" />
+		<NativeLibrary Include="$(MSBuildStartupDirectory)\..\x64\Debug\LibC.lib" Condition="Exists('$(MSBuildStartupDirectory)\..\x64\Debug\LibC.lib')" />
+		<NativeLibrary Include="$(MSBuildStartupDirectory)\..\x64\Debug\Doom.lib" Condition="Exists('$(MSBuildStartupDirectory)\..\x64\Debug\Doom.lib')" />
+		<!-- CPUID object file for CPU feature detection - using safe pointer-based version -->
+		<NativeLibrary Include="$(MSBuildProjectDirectory)\cpuid_safe.obj" Condition="Exists('$(MSBuildProjectDirectory)\cpuid_safe.obj')" />
+		<!-- Stubs for missing native symbols (built from native_stubs.asm) -->
+		<NativeLibrary Include="$(MSBuildProjectDirectory)\native_stubs.obj" Condition="Exists('$(MSBuildProjectDirectory)\native_stubs.obj')" />
+	</ItemGroup>
+
+	<!-- Build NASM stubs if the real native libs are not present. -->
+	<Target Name="BuildNativeStubs" BeforeTargets="Build" Condition="Exists('$(MSBuildProjectDirectory)\native_stubs.asm')">
+		<PropertyGroup>
+			<_NasmExe Condition="Exists('$(MSBuildStartupDirectory)\Tools\nasm.exe')">$(MSBuildStartupDirectory)\Tools\nasm.exe</_NasmExe>
+			<_NasmExe Condition="'$(_NasmExe)'=='' and Exists('$(MSBuildProjectDirectory)\..\Tools\nasm.exe')">$(MSBuildProjectDirectory)\..\Tools\nasm.exe</_NasmExe>
+		</PropertyGroup>
+		<Message Text="[Native] Building native stubs via NASM: $(_NasmExe)" Importance="high" />
+		<Exec Condition="'$(_NasmExe)' != ''" Command="&quot;$(_NasmExe)&quot; -f win64 &quot;$(MSBuildProjectDirectory)\native_stubs.asm&quot; -o &quot;$(MSBuildProjectDirectory)\native_stubs.obj&quot;" />
+		<Warning Condition="'$(_NasmExe)' == ''" Text="NASM not found; cannot build native stubs. Install NASM or provide native libraries implementing required symbols." />
+	</Target>
+
+	<ItemGroup>
+		<LinkerArg Include="/fixed /base:0x10000000 /map:Kernel.map" />
+		<LinkerArg Include="/FORCE:UNRESOLVED" />
+	</ItemGroup>
+
+	<!--Warning: This package is modified(/packages). Using official one may cause it fail to compile!-->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.DotNet.ILCompiler" Version="7.0.0-alpha.1.22074.1" />
+  </ItemGroup>
+
+	<!-- Manually define PackageDefinitions to fix ILCompiler -->
+	<ItemGroup>
+		<PackageDefinitions Include="Microsoft.DotNet.ILCompiler">
+			<Name>Microsoft.DotNet.ILCompiler</Name>
+			<ResolvedPath>$(NuGetPackageRoot)microsoft.dotnet.ilcompiler\7.0.0-alpha.1.22074.1\</ResolvedPath>
+		</PackageDefinitions>
+		<PackageDefinitions Include="runtime.win-x64.Microsoft.DotNet.ILCompiler">
+			<Name>runtime.win-x64.Microsoft.DotNet.ILCompiler</Name>
+			<ResolvedPath>$(NuGetPackageRoot)runtime.win-x64.microsoft.dotnet.ilcompiler\7.0.0-alpha.1.22074.1\</ResolvedPath>
+		</PackageDefinitions>
+	</ItemGroup>
+
+	<Import Project="..\Kernel\Kernel.projitems" Label="Shared" />
+
+	<!-- Ensure native output directory exists for loader.o and native exe -->
+	<Target Name="EnsureNativeOutDir" BeforeTargets="BuildISO">
+		<PropertyGroup>
+			<NativeOutDir>$(MSBuildProjectDirectory)\$(NativeOutputPath)</NativeOutDir>
+		</PropertyGroup>
+		<MakeDir Directories="$(NativeOutDir)" Condition="!Exists('$(NativeOutDir)')" />
+	</Target>
+
+	<!-- Improved BuildISO target: tolerate locked ramdisk.tar -->
+	<Target Name="BuildISO" AfterTargets="Publish" Condition="'$(SkipISO)'!='true'">
+		<PropertyGroup>
+			<RamdiskPath>$(MSBuildStartupDirectory)\Tools\grub2\boot\ramdisk.tar</RamdiskPath>
+			<RamdiskTemp>$(MSBuildStartupDirectory)\Tools\grub2\boot\ramdisk.new.tar</RamdiskTemp>
+			<LoaderPath>$(MSBuildProjectDirectory)\$(NativeOutputPath)loader.o</LoaderPath>
+			<KernelPath>$(MSBuildProjectDirectory)\$(NativeOutputPath)$(TargetName)$(NativeBinaryExt)</KernelPath>
+			<KernelBin>$(MSBuildStartupDirectory)\Tools\grub2\boot\kernel.bin</KernelBin>
+		</PropertyGroup>
+		<!-- Try delete (ignore failure if locked) -->
+		<Delete Files="$(RamdiskPath)" ContinueOnError="true" />
+		<!-- Create new archive to temp to avoid locking conflicts -->
+		<Exec Command="&quot;$(MSBuildStartupDirectory)\Tools\7-Zip\7z.exe&quot; a &quot;$(RamdiskTemp)&quot; &quot;$(MSBuildStartupDirectory)\Ramdisk\*&quot;" />
+		<!-- Replace original if delete succeeded or if overwrite permitted -->
+		<Exec Command="cmd.exe /c move /y &quot;$(RamdiskTemp)&quot; &quot;$(RamdiskPath)&quot;" ContinueOnError="true" />
+		<Exec WorkingDirectory="$(MSBuildStartupDirectory)\Tools\" Command="&quot;$(MSBuildStartupDirectory)\Tools\nasm.exe&quot; -fbin &quot;$(MSBuildStartupDirectory)\Tools\Trampoline.asm&quot; -o &quot;$(MSBuildStartupDirectory)\Tools\trampoline.o&quot;" />
+		<Exec WorkingDirectory="$(MSBuildStartupDirectory)\Tools\" Command="&quot;$(MSBuildStartupDirectory)\Tools\nasm.exe&quot; -fbin &quot;$(MSBuildStartupDirectory)\Tools\EntryPoint.asm&quot; -o &quot;$(LoaderPath)&quot;" />
+		<!-- Concatenate loader and native exe only if both exist -->
+		<PropertyGroup>
+			<LoaderPath>$(MSBuildProjectDirectory)\$(NativeOutputPath)loader.o</LoaderPath>
+			<KernelPath>$(MSBuildProjectDirectory)\$(NativeOutputPath)$(TargetName)$(NativeBinaryExt)</KernelPath>
+			<KernelBin>$(MSBuildStartupDirectory)\Tools\grub2\boot\kernel.bin</KernelBin>
+		</PropertyGroup>
+		<Exec Command="cmd.exe /c copy /b &quot;$(LoaderPath)&quot;+&quot;$(KernelPath)&quot; &quot;$(KernelBin)&quot;" Condition="Exists('$(LoaderPath)') AND Exists('$(KernelPath)')" />
+		<Delete Files="$(LoaderPath)" />
+		<Delete Files="$(MSBuildStartupDirectory)\Tools\trampoline.o" />
+		<Exec Command="&quot;$(MSBuildStartupDirectory)\Tools\mkisofs.exe&quot; -relaxed-filenames -J -R -o &quot;$(MSBuildProjectDirectory)\$(NativeOutputPath)$(TargetName).iso&quot; -b boot/grub/i386-pc/eltorito.img -no-emul-boot -boot-load-size 4 -boot-info-table &quot;$(MSBuildStartupDirectory)\Tools\grub2&quot;" />
+	</Target>
+
+	<!-- BuildUEFI_ISO: DISABLED - We now use ESP folder approach for UEFI boot -->
+	<!-- The build.ps1 script handles UEFI bootloader + ESP assembly -->
+	<!--
+	<Target Name="BuildUEFI_ISO" AfterTargets="Publish" Condition="'$(SkipISO)'!='true'">
+		<PropertyGroup>
+			<RamdiskPath>$(MSBuildStartupDirectory)\Tools\grub2\boot\ramdisk.tar</RamdiskPath>
+			<RamdiskTemp>$(MSBuildStartupDirectory)\Tools\grub2\boot\ramdisk.new.tar</RamdiskTemp>
+			<LoaderPath>$(MSBuildProjectDirectory)\$(NativeOutputPath)loader.o</LoaderPath>
+			<KernelPath>$(MSBuildProjectDirectory)\$(NativeOutputPath)$(TargetName)$(NativeBinaryExt)</KernelPath>
+			<KernelBin>$(MSBuildStartupDirectory)\Tools\grub2\boot\kernel.bin</KernelBin>
+			<EfiImage>$(MSBuildStartupDirectory)\Tools\grub2\efi.img</EfiImage>
+		</PropertyGroup>
+		<Exec Command="&quot;$(MSBuildStartupDirectory)\Tools\create_uefi_img.bat&quot;" />
+		<Exec Command="&quot;$(MSBuildStartupDirectory)\Tools\mkisofs.exe&quot; -relaxed-filenames -J -R -o &quot;$(MSBuildProjectDirectory)\$(NativeOutputPath)$(TargetName).iso&quot; -b boot/grub/i386-pc/eltorito.img -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -e &quot;$(EfiImage)&quot; -no-emul-boot &quot;$(MSBuildStartupDirectory)\Tools\grub2&quot;" />
+	</Target>
+	-->
+
+	<Target Name="RunQemu" AfterTargets="BuildISO" Condition="$(vm) == 'qemu'">
+		<Error Text="Please install QEMU in order to debug guideXOS! (do not modify the path) https://www.qemu.org/download/#windows" Condition="!Exists('C:\Program Files\qemu\qemu-system-x86_64.exe')"></Error>
+		<Error Text="Please install Intel Hardware Accelerated Execution Manager (HAXM) in order to speed up QEMU https://github.com/intel/haxm/releases" Condition="!Exists('C:\Program Files\Intel\HAXM\IntelHaxm.sys')"></Error>
+		<Exec Command="&quot;C:\Program Files\qemu\qemu-system-x86_64.exe&quot; -m 2056 -smp 2 -k en-us -boot d -cdrom &quot;$(MSBuildProjectDirectory)\$(NativeOutputPath)$(TargetName).iso&quot; -d guest_errors -serial stdio -drive id=disk,file=&quot;$(RamdiskPath)&quot;,if=none -device ahci,id=ahci -device ide-hd,drive=disk,bus=ahci.0 -device AC97 -rtc base=localtime -netdev user,id=net0 -device rtl8139,netdev=net0"></Exec>
+	</Target>
+
+	<!--
+	<Target Name="RunQemuUSB" AfterTargets="BuildISO" Condition="$(vm) == 'qemuusb'">
+		<Error Text="Please install QEMU in order to debug guideXOS! (do not modify the path) https://www.qemu.org/download/#windows" Condition="!Exists('C:\Program Files\qemu\qemu-system-x86_64.exe')"></Error>
+		<Error Text="Please install Intel Hardware Accelerated Execution Manager (HAXM) in order to speed up QEMU https://github.com/intel/haxm/releases" Condition="!Exists('C:\Program Files\Intel\HAXM\IntelHaxm.sys')"></Error>
+	    <Exec Command="&quot;C:\Program Files\qemu\qemu-system-x86_64.exe&quot; -m 2056 -smp 2 -k en-us -boot d -cdrom &quot;$(MSBuildProjectDirectory)\$(NativeOutputPath)$(TargetName).iso&quot; -d guest_errors -serial stdio -device AC97 -rtc base=localtime -machine q35 -device qemu-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-mouse,bus=xhci.0 -global usb-kbd.scancode-set=2" />
+	</Target>
+	-->
+
+	<Target Name="RunQemuUSB" AfterTargets="BuildISO" Condition="$(vm) == 'qemuusb'">
+		<Error Text="Please install QEMU in order to debug guideXOS! (do not modify the path) https://www.qemu.org/download/#windows" Condition="!Exists('C:\Program Files\qemu\qemu-system-x86_64.exe')"></Error>
+		<Error Text="Please install Intel Hardware Accelerated Execution Manager (HAXM) in order to speed up QEMU https://github.com/intel/haxm/releases" Condition="!Exists('C:\Program Files\Intel\HAXM\IntelHaxm.sys')"></Error>
+	    <Exec Command="&quot;C:\Program Files\qemu\qemu-system-x86_64.exe&quot; -m 2056 -smp 2 -boot d -cdrom &quot;$(MSBuildProjectDirectory)\$(NativeOutputPath)$(TargetName).iso&quot; -serial stdio -rtc base=localtime -netdev user,id=net0 -device rtl8139,netdev=net0" />
+	</Target>
+
+
+
+	<Target Name="RunQemuNET" AfterTargets="BuildISO" Condition="$(vm) == 'qemutap'">
+		<Error Text="Please install QEMU in order to debug guideXOS! (do not modify the path) https://www.qemu.org/download/#windows" Condition="!Exists('C:\Program Files\qemu\qemu-system-x86_64.exe')"></Error>
+		<Error Text="Please install Intel Hardware Accelerated Execution Manager (HAXM) in order to speed up QEMU https://github.com/intel/haxm/releases" Condition="!Exists('C:\Program Files\Intel\HAXM\IntelHaxm.sys')"></Error>
+		<Exec Command="&quot;C:\Program Files\qemu\qemu-system-x86_64.exe&quot; -m 2056 -smp 2 -k en-us -boot d -cdrom &quot;$(MSBuildProjectDirectory)\$(NativeOutputPath)$(TargetName).iso&quot; -d guest_errors -serial stdio -device AC97 -rtc base=localtime -net nic,model=rtl8139 -net tap,ifname=tap"></Exec>
+	</Target>
+
+	<!-- UEFI Boot Target - Runs build.ps1 and launches QEMU with OVMF firmware -->
+	<Target Name="RunQemuUEFI" AfterTargets="Publish" Condition="$(vm) == 'qemuuefi'">
+		<Error Text="Please install QEMU in order to debug guideXOS! (do not modify the path) https://www.qemu.org/download/#windows" Condition="!Exists('C:\Program Files\qemu\qemu-system-x86_64.exe')"></Error>
+		<Error Text="OVMF.fd not found! Download from https://github.com/tianocore/edk2/releases and place in repository root" Condition="!Exists('$(MSBuildStartupDirectory)\OVMF.fd')" />
+		
+		<!-- Run build.ps1 to build UEFI bootloader + kernel -->
+		<Message Text="Building UEFI bootloader and kernel..." Importance="high" />
+		<Exec Command="powershell.exe -ExecutionPolicy Bypass -File &quot;$(MSBuildStartupDirectory)\build.ps1&quot;" />
+		
+		<!-- Launch QEMU with UEFI - IgnoreExitCode prevents build failure when QEMU exits -->
+		<Message Text="Launching QEMU with UEFI boot..." Importance="high" />
+		<Exec Command="&quot;C:\Program Files\qemu\qemu-system-x86_64.exe&quot; -bios &quot;$(MSBuildStartupDirectory)\OVMF.fd&quot; -drive file=fat:rw:&quot;$(MSBuildStartupDirectory)\ESP&quot;,format=raw -m 1024M -serial stdio -no-reboot -d int,cpu_reset" IgnoreExitCode="true" />
+		</Target>
+	
+	
+	<Target Name="RunVMware" AfterTargets="BuildISO" Condition="$(vm) == 'vmware'">
+		<Error Text="You must install VMWare player in order to use it!" Condition="!Exists('C:\Program Files (x86)\VMware\VMware Player\vmplayer.exe')And!Exists('C:\Program Files (x86)\VMware\VMware Workstation\vmplayer.exe')"></Error>
+		<Exec Condition="Exists('C:\Program Files (x86)\VMware\VMware Workstation\vmplayer.exe')" Command="&quot;C:\Program Files (x86)\VMware\VMware Workstation\vmplayer.exe&quot; &quot;$(MSBuildStartupDirectory)\Tools\VMWare\guideXOS\guideXOS.vmx"></Exec>
+		<Exec Condition="Exists('C:\Program Files (x86)\VMware\VMware Player\vmplayer.exe')And!Exists('C:\Program Files (x86)\VMware\VMware Workstation\vmplayer.exe')" Command="&quot;C:\Program Files (x86)\VMware\VMware Player\vmplayer.exe&quot; &quot;$(MSBuildStartupDirectory)\Tools\VMWare\guideXOS\guideXOS.vmx"></Exec>
+	</Target>
+
+	<Target Name="RunVMwareWorkstation" AfterTargets="BuildISO" Condition="$(vm) == 'vmwareworkstation'">
+		<Error Text="You must install VMWare Workstation in order to use it!" Condition="!Exists('C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe')"></Error>
+		<Exec Condition="Exists('C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe')" Command="&quot;C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe&quot; start &quot;$(MSBuildStartupDirectory)\Tools\VMWare\guideXOS\guideXOS.vmx"></Exec>
+	</Target>
+	
+	<Target Name="RunVirtualBox" AfterTargets="BuildISO" Condition="$(vm) == 'virtualbox'">
+		<Error Text="Please install Oracle VirtualBox to run GuideXOS!" Condition="!Exists('C:\Program Files\Oracle\VirtualBox\VBoxManage.exe')" />
+		<Exec Command="&quot;C:\Program Files\Oracle\VirtualBox\VBoxManage.exe&quot; unregistervm GuideXOS --delete" ContinueOnError="true" />
+		<Exec Command="&quot;C:\Program Files\Oracle\VirtualBox\VBoxManage.exe&quot; createvm --name GuideXOS --register" />
+		<!-- Configure VM with 2GB RAM, USB support, and network adapter -->
+		<Exec Command="&quot;C:\Program Files\Oracle\VirtualBox\VBoxManage.exe&quot; modifyvm GuideXOS --memory 2056 --vram 128 --acpi on --ioapic on --boot1 dvd --ostype Other_64 --mouse usbtablet --usb on --usbehci on --nic1 nat --nictype1 82540EM" />
+		<Exec Command="&quot;C:\Program Files\Oracle\VirtualBox\VBoxManage.exe&quot; storagectl GuideXOS --name SATA --add sata --controller IntelAhci" />
+		<Exec Command="&quot;C:\Program Files\Oracle\VirtualBox\VBoxManage.exe&quot; storageattach GuideXOS --storagectl SATA --port 0 --device 0 --type dvddrive --medium &quot;$(MSBuildProjectDirectory)\$(NativeOutputPath)$(TargetName).iso&quot;" />
+		<Exec Command="&quot;C:\Program Files\Oracle\VirtualBox\VBoxManage.exe&quot; startvm GuideXOS --type gui" />
+	</Target>
+
+
+	<Import Project="..\Corlib\Corlib.projitems" Label="Shared" />
+
+	<ItemGroup>
+	  <PrivateSdkAssemblies Remove="Portable\**" />
+	</ItemGroup>
+
+
+	<ItemGroup>
+	  <FrameworkAssemblies Remove="Portable\**" />
+	</ItemGroup>
+
+
+	<ItemGroup>
+	  <Compile Remove="DefaultApps\Anomalocaris.cs" />
+	  <Compile Remove="DefaultApps\Audica.cs" />
+	  <Compile Remove="DefaultApps\Gorganopsid.cs" />
+	  <Compile Remove="Kernel\Drivers\PS2MouseOld.cs" />
+	</ItemGroup>
+</Project>

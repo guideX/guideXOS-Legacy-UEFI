@@ -1,0 +1,4 @@
+D:\devgitlab\guideXOS\guideXOS\bin\debug\net9.0\win-x64\publish\guideXOS.exe
+D:\devgitlab\guideXOS\guideXOS\bin\debug\net9.0\win-x64\publish\guideXOS.runtimeconfig.json
+D:\devgitlab\guideXOS\guideXOS\bin\debug\net9.0\win-x64\publish\guideXOS.pdb
+D:\devgitlab\guideXOS\guideXOS\bin\debug\net9.0\win-x64\publish\guideXOS.deps.json

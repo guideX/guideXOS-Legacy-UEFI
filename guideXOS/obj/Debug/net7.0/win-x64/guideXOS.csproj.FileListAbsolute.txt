@@ -1,0 +1,13 @@
+D:\devgitlab\guideXOS\guideXOS\bin\Debug\net7.0\win-x64\guideXOS.exe
+D:\devgitlab\guideXOS\guideXOS\bin\Debug\net7.0\win-x64\guideXOS.deps.json
+D:\devgitlab\guideXOS\guideXOS\bin\Debug\net7.0\win-x64\guideXOS.runtimeconfig.json
+D:\devgitlab\guideXOS\guideXOS\bin\Debug\net7.0\win-x64\guideXOS.dll
+D:\devgitlab\guideXOS\guideXOS\bin\Debug\net7.0\win-x64\guideXOS.pdb
+D:\devgitlab\guideXOS\guideXOS\guideXOS\obj\Debug\net7.0\win-x64\guideXOS.GeneratedMSBuildEditorConfig.editorconfig
+D:\devgitlab\guideXOS\guideXOS\guideXOS\obj\Debug\net7.0\win-x64\guideXOS.csproj.CoreCompileInputs.cache
+D:\devgitlab\guideXOS\guideXOS\guideXOS\obj\Debug\net7.0\win-x64\guideXOS.csproj.Up2Date
+D:\devgitlab\guideXOS\guideXOS\guideXOS\obj\Debug\net7.0\win-x64\guideXOS.dll
+D:\devgitlab\guideXOS\guideXOS\guideXOS\obj\Debug\net7.0\win-x64\refint\guideXOS.dll
+D:\devgitlab\guideXOS\guideXOS\guideXOS\obj\Debug\net7.0\win-x64\guideXOS.pdb
+D:\devgitlab\guideXOS\guideXOS\guideXOS\obj\Debug\net7.0\win-x64\guideXOS.genruntimeconfig.cache
+D:\devgitlab\guideXOS\guideXOS\guideXOS\obj\Debug\net7.0\win-x64\ref\guideXOS.dll
