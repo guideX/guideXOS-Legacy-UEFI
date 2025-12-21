@@ -90,6 +90,8 @@ static const uint8_t g_TrampolineCodeBytes[] = {
     0xEE,                        // out dx, al
     
     // === STAGE 2: Load new page tables (if pml4Phys != 0) ===
+    // CRITICAL: Must load our page tables which map virtual -> physical addresses
+    // The kernel is linked at virtual 0x10000000 but loaded at physical 0x3D785000
     // test r15, r15
     0x4D, 0x85, 0xFF,
     // jz .skip_cr3
@@ -98,7 +100,7 @@ static const uint8_t g_TrampolineCodeBytes[] = {
     // mov rax, r15   ; rax = pml4Phys
     0x4C, 0x89, 0xF8,
     
-    // mov cr3, rax  ; load new page tables - THIS IS THE CRITICAL MOMENT
+    // mov cr3, rax  ; load new page tables
     0x0F, 0x22, 0xD8,
     
     // .skip_cr3:
@@ -119,9 +121,10 @@ static const uint8_t g_TrampolineCodeBytes[] = {
     // and rsp, 0xFFFFFFFFFFFFFFF0 ; ensure 16-byte alignment
     0x48, 0x83, 0xE4, 0xF0,
     
-    // sub rsp, 32   ; allocate shadow space (32 bytes) - keeps 16-byte alignment
-    // For JMP (not CALL), kernel expects RSP % 16 == 0 at entry
-    0x48, 0x83, 0xEC, 0x20,
+    // sub rsp, 40   ; allocate shadow space (32 bytes) + 8 bytes to simulate CALL's push
+    // MS x64 ABI: RSP % 16 == 8 at function entry (after CALL pushes return address)
+    // Since we use JMP (no push), we subtract 40 (32 shadow + 8 fake return) = RSP % 16 == 8
+    0x48, 0x83, 0xEC, 0x28,
     
     // Output '3' to serial (stack switched)
     0xBA, 0xFD, 0x03,           // mov dx, 0x3FD

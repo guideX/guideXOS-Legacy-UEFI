@@ -105,9 +105,22 @@ internal static unsafe class EntryPoint {
             }
             
             // STEP 5: Initialize modules (required for NativeAOT runtime)
-            // CRITICAL: Must get the actual module pointer, not null!
-            // The __modules_a function returns the address of the NativeAOT module table
+            // CRITICAL: Must get the actual module pointer from the native assembly stub
+            // The __modules_a native function returns the address of the __Module symbol
+            // which contains the NativeAOT module table.
+            // This call works because it's a direct native call, not a managed P/Invoke
             IntPtr modulesPtr = GetModulesPointer();
+            
+            // Draw a marker to show we got the modules pointer
+            if (bootInfo->FramebufferBase != 0) {
+                uint* fb = (uint*)bootInfo->FramebufferBase;
+                uint pitch = bootInfo->FramebufferPitch / 4;
+                // Draw WHITE line at y=125 to show modules pointer retrieved
+                for (uint x = 0; x < 400; x++) {
+                    fb[125 * pitch + x] = 0x00FFFFFF; // WHITE = got modules ptr
+                }
+            }
+            
             StartupCodeHelpers.InitializeModules(modulesPtr);
             
             // STEP 6: Draw cyan line after modules initialized

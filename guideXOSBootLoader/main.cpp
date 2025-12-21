@@ -472,22 +472,30 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
     // Allocate a simple stack that survives ExitBootServices
     // (Some kernels assume a larger / aligned stack than what UEFI leaves us.)
-    // CRITICAL: Allocate stack at high memory to avoid conflicts with kernel
+    // CRITICAL: Allocate stack AFTER kernel loading is complete to ensure no overlap!
+    // The kernel is loaded at ~0x3D785000, so we want stack well above that.
+    // We allocate near 1GB mark to be safe (0x40000000 = 1GB)
     const UINTN stackPages = 16; // 64 KiB stack
-    EFI_PHYSICAL_ADDRESS stackPhys = 0x100000000ULL - (stackPages * EFI_PAGE_SIZE); // Just below 4GB
+    EFI_PHYSICAL_ADDRESS stackPhys = 0;
+    
+    // First, try to allocate stack at a specific safe location above kernel
+    // Use 0x50000000 (1.25GB) as target - well above typical kernel load address
+    EFI_PHYSICAL_ADDRESS desiredStackBase = 0x50000000ULL;
     EFI_STATUS stackStatus = SystemTable->BootServices->AllocatePages(
-        AllocateMaxAddress,  // Use max address mode to avoid kernel region
+        AllocateAddress,  // Try to allocate at specific address
         EfiLoaderData,
         stackPages,
-        &stackPhys
+        &desiredStackBase
     );
+    
     void* stackTop = nullptr;
     if (!EFI_ERROR(stackStatus)) {
+        stackPhys = desiredStackBase;
         stackTop = (void*)(UINTN)((stackPhys + stackPages * EFI_PAGE_SIZE) & ~0xFULL); // 16-byte align
         Print(L"Stack allocated at %p, top at %p\n", (VOID*)(UINTN)stackPhys, stackTop);
     } else {
-        Print(L"WARNING: Stack allocation failed with status %r, trying fallback...\n", stackStatus);
-        // Fallback: allocate anywhere
+        Print(L"WARNING: Stack allocation at 0x50000000 failed, trying fallback...\n");
+        // Fallback: allocate anywhere but verify it doesn't overlap with kernel
         stackPhys = 0;
         stackStatus = SystemTable->BootServices->AllocatePages(
             AllocateAnyPages,
@@ -498,6 +506,35 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
         if (!EFI_ERROR(stackStatus)) {
             stackTop = (void*)(UINTN)((stackPhys + stackPages * EFI_PAGE_SIZE) & ~0xFULL);
             Print(L"Stack fallback allocated at %p, top at %p\n", (VOID*)(UINTN)stackPhys, stackTop);
+            
+            // SAFETY CHECK: Verify stack doesn't overlap with kernel
+            EFI_PHYSICAL_ADDRESS stackEnd = stackPhys + stackPages * EFI_PAGE_SIZE;
+            EFI_PHYSICAL_ADDRESS kernelEnd = kernelBase + kernelTotalSize;
+            if ((stackPhys >= kernelBase && stackPhys < kernelEnd) ||
+                (stackEnd > kernelBase && stackEnd <= kernelEnd) ||
+                (stackPhys <= kernelBase && stackEnd >= kernelEnd)) {
+                Print(L"FATAL: Stack overlaps with kernel! Stack: %p-%p, Kernel: %p-%p\n",
+                      (VOID*)(UINTN)stackPhys, (VOID*)(UINTN)stackEnd,
+                      (VOID*)(UINTN)kernelBase, (VOID*)(UINTN)kernelEnd);
+                // Try to allocate elsewhere
+                SystemTable->BootServices->FreePages(stackPhys, stackPages);
+                
+                // Try allocating below 1MB (legacy area, usually free)
+                stackPhys = 0x80000; // 512KB mark
+                stackStatus = SystemTable->BootServices->AllocatePages(
+                    AllocateAddress,
+                    EfiLoaderData,
+                    stackPages,
+                    &stackPhys
+                );
+                if (!EFI_ERROR(stackStatus)) {
+                    stackTop = (void*)(UINTN)((stackPhys + stackPages * EFI_PAGE_SIZE) & ~0xFULL);
+                    Print(L"Stack emergency allocated at %p, top at %p\n", (VOID*)(UINTN)stackPhys, stackTop);
+                } else {
+                    Print(L"FATAL: Could not allocate non-overlapping stack!\n");
+                    stackTop = nullptr;
+                }
+            }
         } else {
             Print(L"FATAL: Could not allocate stack!\n");
         }
@@ -571,11 +608,12 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     sizes[rangeCount] = kernelSpanBytes;
     rangeCount++;
 
-    // 3. Stack
+    // 3. Stack - map the entire allocated region
     if (stackPhys != 0) {
         ranges[rangeCount] = stackPhys;
         sizes[rangeCount] = stackPages * EFI_PAGE_SIZE;
         rangeCount++;
+        Print(L"Mapping stack: %p size %u\n", (VOID*)(UINTN)stackPhys, (UINT32)(stackPages * EFI_PAGE_SIZE));
     }
 
     // 4. BootInfo struct (allocated in EfiLoaderData pages)
@@ -857,6 +895,10 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
         (uint64_t)(UINTN)stackTop, 
         pt.Pml4Phys
     );
+    
+    // ALSO validate the virtual entry address mapping
+    guideXOS::debug::SerialPrint("\n[BOOT] Validating VIRTUAL kernel entry mapping:\n");
+    guideXOS::debug::ValidatePageMapping(pt.Pml4Phys, entryVirt);
 
     guideXOS::debug::SerialPrint("[BOOT] About to handoff via trampoline...\n");
     guideXOS::debug::SerialPrint("[BOOT] Trampoline at: ");
@@ -882,6 +924,10 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
     guideXOS::debug::SerialPrint("\n[BOOT] === CALLING TRAMPOLINE NOW ===\n");
 
+    // Jump to PHYSICAL address using our custom page tables that have identity mapping
+    // The kernel is NativeAOT which uses position-independent code, so it will work
+    // at the physical load address as long as all memory regions are identity-mapped.
+    // Pass our PML4 to ensure consistent page table state after handoff.
     BootHandoffTrampoline((void*)(UINTN)entryPhys, (void*)v1BootInfo, stackTop, (void*)(UINTN)pt.Pml4Phys);
 
     // If we return, halt
