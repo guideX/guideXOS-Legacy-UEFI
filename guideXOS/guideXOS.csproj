@@ -19,7 +19,9 @@
 		<DefineConstants>Kernel;UseAPIC;NETWORK;X64</DefineConstants>
 
 		<IlcSystemModule>guideXOS</IlcSystemModule>
-		<EntryPointSymbol>Entry</EntryPointSymbol>
+		<!-- CRITICAL: For UEFI boot, the entry point is KMain (not Entry) -->
+		<!-- Entry is used for legacy GRUB2/multiboot boot -->
+		<EntryPointSymbol>KMain</EntryPointSymbol>
 		<LinkerSubsystem>NATIVE</LinkerSubsystem>
 		<!--Make the code faster!-->
 		<IlcOptimizationPreference>Size</IlcOptimizationPreference>

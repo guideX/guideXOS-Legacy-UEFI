@@ -5,54 +5,121 @@ using System;
 using System.Runtime;
 using System.Runtime.InteropServices;
 namespace guideXOS.Misc {
+/// <summary>
+/// Entry Point
+/// </summary>
+internal static unsafe class EntryPoint {
     /// <summary>
-    /// Entry Point
+    /// NEW UEFI entry point called from UEFI bootloader
+    /// This is the modern entry point that receives guideXOS::BootInfo
+    /// 
+    /// NOTE: The UEFI bootloader uses Microsoft x64 ABI (parameter in RCX).
+    /// This should match since we're building for Windows x64.
+    /// 
+    /// UnmanagedCallersOnly ensures the function has a proper native entry point
+    /// without any managed code preamble that might cause issues.
     /// </summary>
-    internal static unsafe class EntryPoint {
-        /// <summary>
-        /// NEW UEFI entry point called from UEFI bootloader
-        /// This is the modern entry point that receives guideXOS::BootInfo
-        /// 
-        /// NOTE: The UEFI bootloader uses Microsoft x64 ABI (parameter in RCX).
-        /// This should match since we're building for Windows x64.
-        /// </summary>
-        /// <param name="bootInfo">UEFI boot information structure</param>
+    /// <param name="bootInfo">UEFI boot information structure</param>
         [RuntimeExport("KMain")]
+        [UnmanagedCallersOnly(EntryPoint = "KMain")]
         public static void KMain(UefiBootInfo* bootInfo) {
-            // === ABSOLUTE FIRST THING: Write to framebuffer to prove we got here ===
-            // This must happen BEFORE any runtime initialization
-            // Use simple pointer math - no managed objects yet!
-            if (bootInfo != null) {
-                ulong fbBase = bootInfo->FramebufferBase;
-                if (fbBase != 0) {
-                    uint* fb = (uint*)fbBase;
-                    // Draw a white line at y=0 - if we see this, kernel entry worked!
-                    for (int x = 0; x < 300; x++) {
-                        fb[x] = 0xFFFFFFFF; // White
-                    }
+            // CRITICAL FIX: The bootloader's stack overlaps with kernel memory!
+            // Stack top: 0x3D785000, Kernel start: 0x3D785000
+            // This causes stack pushes to overwrite kernel code!
+            // 
+            // WORKAROUND: Switch to a safe stack region immediately
+            // We'll use a region in the framebuffer's vicinity that's mapped
+            // The framebuffer is at 0x80000000, we can use 0x7FF00000 for stack (16MB below)
+            // But since we can't easily switch stacks in C#, let's try minimal operations
+            
+            // STEP 0: ABSOLUTE FIRST INSTRUCTION - Draw using hardcoded framebuffer address
+            // This proves we entered KMain BEFORE touching ANY parameters
+            {
+                uint* fb = (uint*)0x80000000UL;
+                uint pitch = 1280;
+                // Draw BRIGHT PURPLE line at y=50
+                for (uint x = 0; x < 800; x++) {
+                    *(fb + 50 * pitch + x) = 0x00FF00FF; // PURPLE = KMain entry!
                 }
             }
             
-            // Now halt - we just want to see if we get a white line
-            for (; ; ) Native.Hlt();
-
-            // Validate boot info magic
+            // STEP 1: Draw a visual marker IMMEDIATELY to prove we're in KMain
+            // This must happen BEFORE any managed code that might throw
+            if (bootInfo != null && bootInfo->FramebufferBase != 0) {
+                uint* fb = (uint*)bootInfo->FramebufferBase;
+                uint pitch = bootInfo->FramebufferPitch / 4;
+                // Draw RED line at y=100 (below bootloader's colored squares)
+                for (uint x = 0; x < 400; x++) {
+                    fb[100 * pitch + x] = 0x00FF0000; // RED = entered KMain
+                }
+            }
+            
+            // STEP 2: Validate boot info magic
             if (bootInfo == null || bootInfo->Magic != 0x49425847) { // 'GXBI'
-                // Invalid boot info - draw red line and halt
+                // Invalid boot info - draw blue error line and halt
                 if (bootInfo != null && bootInfo->FramebufferBase != 0) {
                     uint* fb = (uint*)bootInfo->FramebufferBase;
-                    for (uint x = 0; x < 200; x++) {
-                        fb[10 * (bootInfo->FramebufferPitch / 4) + x] = 0x00FF0000; // Red
+                    uint pitch = bootInfo->FramebufferPitch / 4;
+                    for (uint x = 0; x < 400; x++) {
+                        fb[110 * pitch + x] = 0x000000FF; // BLUE = bad magic
                     }
                 }
                 for (; ; ) Native.Hlt();
             }
             
-            // Initialize page tables
+            // STEP 3: Initialize allocator FIRST (before any allocations)
+            // Draw yellow line to show we're initializing allocator
+            if (bootInfo->FramebufferBase != 0) {
+                uint* fb = (uint*)bootInfo->FramebufferBase;
+                uint pitch = bootInfo->FramebufferPitch / 4;
+                for (uint x = 0; x < 400; x++) {
+                    fb[120 * pitch + x] = 0x00FFFF00; // YELLOW = allocator init
+                }
+            }
+            
+            // CRITICAL: The allocator base MUST be in a memory region that is mapped
+            // The bootloader maps the kernel at physical addresses starting around 0x3D785000
+            // We'll use a region after the kernel for allocations
+            // For UEFI boot, use the end of kernel region (kernel is loaded at ~0x3D785000)
+            // Calculate allocator base relative to kernel's physical location
+            // A safe bet is to use 0x40000000 which should be in mapped conventional memory
+            // Or even better, use a region starting after where the kernel ends
+            // The kernel is loaded at ~0x3D785000 with size ~0x41C600 bytes
+            // So it ends around 0x3DBA1600 - we'll start allocator at 0x3DC00000 (aligned)
+            // Actually, let's use a fixed address that we know the bootloader maps: the framebuffer region!
+            // No wait - framebuffer is MMIO and can't be used for allocations
+            
+            // SAFEST approach: Use memory starting after a large offset from kernel load base
+            // The kernel mapping should extend far enough if the bootloader maps sufficient pages
+            // Let's try 0x4000000 (64MB from start) - this should be within the first 1GB identity mapping
+            Allocator.Initialize((IntPtr)0x4000000);
+            
+            // STEP 4: Draw green line after allocator succeeds
+            if (bootInfo->FramebufferBase != 0) {
+                uint* fb = (uint*)bootInfo->FramebufferBase;
+                uint pitch = bootInfo->FramebufferPitch / 4;
+                for (uint x = 0; x < 400; x++) {
+                    fb[130 * pitch + x] = 0x0000FF00; // GREEN = allocator OK
+                }
+            }
+            
+            // STEP 5: Initialize modules (required for NativeAOT runtime)
+            StartupCodeHelpers.InitializeModules((IntPtr)0);
+            
+            // STEP 6: Draw cyan line after modules initialized
+            if (bootInfo->FramebufferBase != 0) {
+                uint* fb = (uint*)bootInfo->FramebufferBase;
+                uint pitch = bootInfo->FramebufferPitch / 4;
+                for (uint x = 0; x < 400; x++) {
+                    fb[140 * pitch + x] = 0x0000FFFF; // CYAN = modules OK
+                }
+            }
+            
+            // STEP 7: Initialize page tables
             PageTable.Initialise();
             ASC16.Initialize();
 
-            // Initialize framebuffer from UEFI GOP info
+            // STEP 8: Initialize framebuffer from UEFI GOP info
             if (bootInfo->HasFramebuffer && bootInfo->FramebufferBase != 0) {
                 Framebuffer.Initialize(
                     (ushort)bootInfo->FramebufferWidth,
@@ -65,7 +132,7 @@ namespace guideXOS.Misc {
                 for (; ; ) Native.Hlt();
             }
 
-            // Boot splash
+            // STEP 9: Boot splash
             BootSplash.Initialize("Team Nexgen", "guideXOS", "Version: 0.2 UEFI");
             Console.Setup();
             Console.WriteLine("[UEFI] Booting from UEFI bootloader");
@@ -258,8 +325,8 @@ namespace guideXOS.Misc {
         /// Main kernel initialization (shared by both entry points)
         /// </summary>
         private static void KernelMain() {
-            // Call the main OS initialization
-            Program.SMain();
+            // Call the main OS initialization - this sets up GUI, drivers, etc.
+            Program.KMain();
         }
 
         /// <summary>

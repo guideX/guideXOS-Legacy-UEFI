@@ -55,7 +55,7 @@ unsafe class Program {
     /// KMain - Called by EntryPoint after initialization
     /// Note: This is NOT the UEFI entry point. The actual UEFI entry is in EntryPoint.cs
     /// </summary>
-    static void KMain() {
+    public static void KMain() {
         Animator.Initialize();
 
         // Initialize legacy PS/2 input first so VirtualBox (default PS/2 devices) works out-of-the-box.
