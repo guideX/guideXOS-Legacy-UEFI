@@ -56,5 +56,6 @@ EFI_STATUS LoadElf(
     EFI_FILE_PROTOCOL* KernelFile,
     UINT64* kernelBase,
     UINT64* kernelEntryOffset,
-    UINT64* outKernelTotalSizeBytes = nullptr
+    UINT64* outKernelTotalSizeBytes = nullptr,
+    UINT64* outMinLoadVaddr = nullptr
 );

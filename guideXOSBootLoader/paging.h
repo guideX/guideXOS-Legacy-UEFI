@@ -36,10 +36,18 @@ namespace paging
         /*in*/ const UINTN* sizesBegin,
         PageTables* out);
 
-    // Helper to add a mapping for [physBase, physBase+size)
+    // Helper to add a mapping for [physBase, physBase+size) as identity map
     EFI_STATUS MapIdentityRange(
         EFI_SYSTEM_TABLE* SystemTable,
         EFI_PHYSICAL_ADDRESS pml4Phys,
+        EFI_PHYSICAL_ADDRESS physBase,
+        UINTN sizeBytes);
+
+    // Helper to add a mapping for [virtBase, virtBase+size) -> physBase
+    EFI_STATUS MapRange(
+        EFI_SYSTEM_TABLE* SystemTable,
+        EFI_PHYSICAL_ADDRESS pml4Phys,
+        UINT64 virtBase,
         EFI_PHYSICAL_ADDRESS physBase,
         UINTN sizeBytes);
 }

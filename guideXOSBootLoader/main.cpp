@@ -43,6 +43,8 @@ extern "C" void __halt(void);
 
 // Assembly trampoline (NASM, win64 ABI)
 extern "C" void BootHandoffTrampoline(void* kernelEntry, void* bootInfo, void* stackTop, void* pml4Phys);
+extern "C" void SetupTrampoline(void* executableMemory);
+extern "C" UINTN GetTrampolineCodeSize(void);
 
 // Local aliases for compatibility with existing code
 #define Acpi20TableGuid gEfiAcpi20TableGuid
@@ -371,14 +373,16 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     UINT64 kernelBase;
     UINT64 kernelEntryOffset;
     UINT64 kernelTotalSize = 0;
-    status = LoadElf(SystemTable, KernelFile, &kernelBase, &kernelEntryOffset, &kernelTotalSize);
+    UINT64 kernelMinVaddr = 0;
+    status = LoadElf(SystemTable, KernelFile, &kernelBase, &kernelEntryOffset, &kernelTotalSize, &kernelMinVaddr);
     if (EFI_ERROR(status)) {
         Print(L"Failed to load ELF kernel\n");
         return status;
     }
 
     UINT64 entryPhys = kernelBase + kernelEntryOffset;
-    Print(L"Kernel entry phys: %p\n", (VOID*)(UINTN)entryPhys);
+    UINT64 entryVirt = kernelMinVaddr + kernelEntryOffset;
+    Print(L"Kernel entry phys: %p virt: %p\n", (VOID*)(UINTN)entryPhys, (VOID*)(UINTN)entryVirt);
 
     // --- Load Ramdisk ---
     EFI_PHYSICAL_ADDRESS ramdiskPhys = 0;
@@ -480,6 +484,23 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     if (!EFI_ERROR(stackStatus)) {
         stackTop = (void*)(UINTN)((stackPhys + stackPages * EFI_PAGE_SIZE) & ~0xFULL); // 16-byte align
     }
+
+    // --- Allocate executable trampoline buffer that survives ExitBootServices ---
+    EFI_PHYSICAL_ADDRESS trampolinePhys = 0;
+    UINTN trampolineSize = GetTrampolineCodeSize();
+    UINTN trampolinePages = (trampolineSize + EFI_PAGE_SIZE - 1) / EFI_PAGE_SIZE;
+    EFI_STATUS trampStatus = SystemTable->BootServices->AllocatePages(
+        AllocateAnyPages,
+        EfiLoaderData,
+        trampolinePages,
+        &trampolinePhys
+    );
+    if (EFI_ERROR(trampStatus)) {
+        Print(L"Failed to allocate trampoline memory\n");
+        return trampStatus;
+    }
+    SetMem((void*)(UINTN)trampolinePhys, trampolinePages * EFI_PAGE_SIZE, 0);
+    SetupTrampoline((void*)(UINTN)trampolinePhys);
 
     // --- Build identity-mapped page tables BEFORE ExitBootServices ---
     // We must build page tables while BootServices are still available.
@@ -604,6 +625,11 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
         }
     }
 
+    // 10. Trampoline executable buffer
+    ranges[rangeCount] = trampolinePhys;
+    sizes[rangeCount] = trampolinePages * EFI_PAGE_SIZE;
+    rangeCount++;
+
     Print(L"Building identity page tables with %u ranges...\n", (UINT32)rangeCount);
 
     guideXOS::paging::PageTables pt{};
@@ -616,6 +642,20 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
             &pt);
         if (EFI_ERROR(st)) {
             Print(L"Failed to build identity page tables\n");
+            return st;
+        }
+    }
+
+    // Map kernel virtual addresses to their physical backing
+    {
+        EFI_STATUS st = guideXOS::paging::MapRange(
+            SystemTable,
+            pt.Pml4Phys,
+            kernelMinVaddr,
+            kernelPhysBase,
+            kernelSpanBytes);
+        if (EFI_ERROR(st)) {
+            Print(L"Failed to map kernel virtual range\n");
             return st;
         }
     }

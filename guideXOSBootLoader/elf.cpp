@@ -8,7 +8,8 @@ EFI_STATUS LoadElf(
     EFI_FILE_PROTOCOL* KernelFile,
     UINT64* kernelBase,
     UINT64* kernelEntryOffset,
-    UINT64* outKernelTotalSizeBytes
+    UINT64* outKernelTotalSizeBytes,
+    UINT64* outMinLoadVaddr
 )
 {
     EFI_STATUS status;
@@ -72,8 +73,6 @@ EFI_STATUS LoadElf(
     }
 
     // --- 3. Find min/max vaddr to determine total image span ---
-    // We preserve the relative layout of segments (including gaps) so that
-    // the entry point offset calculation works correctly.
     UINT64 minLoadVaddr = (UINT64)-1;
     UINT64 maxLoadVaddr = 0;
 
@@ -100,7 +99,6 @@ EFI_STATUS LoadElf(
         return EFI_LOAD_ERROR;
     }
 
-    // Total size spans from minLoadVaddr to maxLoadVaddr
     UINT64 totalSize = maxLoadVaddr - minLoadVaddr;
 
     Print((CONST CHAR16*)L"ELF: vaddr range 0x%lx - 0x%lx (size 0x%lx)\n", 
@@ -130,9 +128,6 @@ EFI_STATUS LoadElf(
     Print((CONST CHAR16*)L"ELF: Allocated %u pages at 0x%lx\n", (UINT32)numPages, physBase);
 
     // --- 5. Load each PT_LOAD segment at its relative offset ---
-    // Each segment is placed at: physBase + (p_vaddr - minLoadVaddr)
-    // This preserves the virtual address layout in physical memory.
-
     for (UINT16 i = 0; i < ehdr.e_phnum; ++i) {
         Elf64_Phdr* ph = (Elf64_Phdr*)((UINT8*)phdrs + i * ehdr.e_phentsize);
 
@@ -140,14 +135,12 @@ EFI_STATUS LoadElf(
             continue;
         }
 
-        // Calculate destination: preserve relative offset from minLoadVaddr
         UINT64 relativeOffset = ph->p_vaddr - minLoadVaddr;
         UINT8* segDest = basePtr + relativeOffset;
 
         Print((CONST CHAR16*)L"ELF: Loading seg %u: vaddr=0x%lx -> phys=0x%lx (filesz=0x%lx)\n",
               (UINT32)i, ph->p_vaddr, (UINT64)(UINTN)segDest, ph->p_filesz);
 
-        // Read the file portion
         if (ph->p_filesz > 0) {
             status = KernelFile->SetPosition(KernelFile, ph->p_offset);
             if (EFI_ERROR(status)) {
@@ -164,35 +157,26 @@ EFI_STATUS LoadElf(
                 return EFI_LOAD_ERROR;
             }
         }
-
-        // BSS is already zeroed by the SetMem above
     }
 
     // --- 6. Compute entry offset ---
-    // Entry is at: e_entry (virtual) -> physBase + (e_entry - minLoadVaddr)
     UINT64 entryOffset = ehdr.e_entry - minLoadVaddr;
 
-    // Validate that entry point is within loaded segments
+    // Validate entry point
     bool entryValid = false;
     for (UINT16 i = 0; i < ehdr.e_phnum; ++i) {
         Elf64_Phdr* ph = (Elf64_Phdr*)((UINT8*)phdrs + i * ehdr.e_phentsize);
         if (ph->p_type != PT_LOAD || ph->p_memsz == 0) continue;
-        
-        if (ehdr.e_entry >= ph->p_vaddr && 
-            ehdr.e_entry < ph->p_vaddr + ph->p_memsz) {
+        if (ehdr.e_entry >= ph->p_vaddr && ehdr.e_entry < ph->p_vaddr + ph->p_memsz) {
             entryValid = true;
-            Print((CONST CHAR16*)L"ELF: Entry point in segment %u (vaddr 0x%lx)\n", 
-                  (UINT32)i, ph->p_vaddr);
+            Print((CONST CHAR16*)L"ELF: Entry point in segment %u (vaddr 0x%lx)\n", (UINT32)i, ph->p_vaddr);
             break;
         }
     }
-    
     if (!entryValid) {
-        Print((CONST CHAR16*)L"ELF: WARNING - Entry point 0x%lx not in any PT_LOAD segment!\n", 
-              ehdr.e_entry);
+        Print((CONST CHAR16*)L"ELF: WARNING - Entry point 0x%lx not in any PT_LOAD segment!\n", ehdr.e_entry);
     }
 
-    // Validate entry offset is within allocated size
     if (entryOffset >= totalSize) {
         Print((CONST CHAR16*)L"ELF: ERROR - Entry offset 0x%lx exceeds total size 0x%lx\n",
               entryOffset, totalSize);
@@ -200,13 +184,16 @@ EFI_STATUS LoadElf(
         return EFI_LOAD_ERROR;
     }
 
-    Print((CONST CHAR16*)L"ELF: Entry vaddr=0x%lx, offset=0x%lx, physEntry=0x%lx\n", 
+    Print((CONST CHAR16*)L"ELF: Entry vaddr=0x%lx, offset=0x%lx, physEntry=0x%lx\n",
           ehdr.e_entry, entryOffset, physBase + entryOffset);
 
     *kernelBase        = (UINT64)physBase;
     *kernelEntryOffset = entryOffset;
     if (outKernelTotalSizeBytes) {
         *outKernelTotalSizeBytes = totalSize;
+    }
+    if (outMinLoadVaddr) {
+        *outMinLoadVaddr = minLoadVaddr;
     }
 
     LocalFreePool(SystemTable, phdrs, phTableSize);

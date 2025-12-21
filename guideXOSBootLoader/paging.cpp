@@ -101,17 +101,42 @@ namespace paging
             
             // CRITICAL FIX: Check if mapping already exists to avoid conflicts
             if ((pt[pti] & PTE_P) != 0) {
-                // Mapping exists - verify it points to the same physical address
                 EFI_PHYSICAL_ADDRESS existingPhys = pt[pti] & ~0xFFFull;
                 if (existingPhys != p) {
-                    // Conflict! This shouldn't happen with identity mapping
-                    // For now, overwrite - but this indicates a bug
+                    // Conflict! Overwrite with identity mapping.
                 }
             }
             
-            // Map as RWX (Present, Writable, no NX bit)
-            // Setting PTE_G (Global) can improve TLB performance for kernel pages
+            // Map as RWX (Present, Writable, Global)
             pt[pti] = (UINT64)p | PTE_P | PTE_W | PTE_G;
+        }
+
+        return EFI_SUCCESS;
+    }
+
+    EFI_STATUS MapRange(
+        EFI_SYSTEM_TABLE* SystemTable,
+        EFI_PHYSICAL_ADDRESS pml4Phys,
+        UINT64 virtBase,
+        EFI_PHYSICAL_ADDRESS physBase,
+        UINTN sizeBytes)
+    {
+        if (sizeBytes == 0) return EFI_SUCCESS;
+
+        UINT64 vStart = virtBase & ~0xFFFULL;
+        UINT64 vEnd   = (virtBase + (UINT64)sizeBytes + 0xFFFULL) & ~0xFFFULL;
+        UINT64 phys   = physBase & ~0xFFFULL;
+
+        for (UINT64 v = vStart; v < vEnd; v += 0x1000, phys += 0x1000) {
+            EFI_PHYSICAL_ADDRESS ptPhys = 0;
+            EFI_STATUS st = EnsurePtForVaddr(SystemTable, pml4Phys, v, &ptPhys);
+            if (EFI_ERROR(st)) return st;
+
+            const UINTN pti = (UINTN)((v >> 12) & 0x1FFull);
+            UINT64* pt = PhysToPtr(ptPhys);
+
+            // Overwrite mapping to desired physical address
+            pt[pti] = (UINT64)phys | PTE_P | PTE_W | PTE_G;
         }
 
         return EFI_SUCCESS;
@@ -133,7 +158,7 @@ namespace paging
         EFI_STATUS st = AllocTable(SystemTable, &pml4Phys);
         if (EFI_ERROR(st)) return st;
 
-        // Map each requested range
+        // Map each requested range (identity)
         UINTN idx = 0;
         for (auto p = rangesBegin; p != rangesEnd; ++p, ++idx) {
             st = MapIdentityRange(SystemTable, pml4Phys, *p, sizesBegin[idx]);
@@ -141,10 +166,6 @@ namespace paging
         }
 
         // CRITICAL: Identity-map all page table pages themselves.
-        // When we load CR3, the CPU needs to walk the page tables.
-        // If the page table pages aren't mapped, we triple-fault immediately.
-        // We need to iterate and map, which may allocate more PT pages,
-        // so we loop until no new pages are added.
         UINTN mappedCount = 0;
         while (mappedCount < g_ptPageCount) {
             UINTN currentCount = g_ptPageCount;
@@ -153,7 +174,6 @@ namespace paging
                 if (EFI_ERROR(st)) return st;
             }
             mappedCount = currentCount;
-            // If mapping PT pages caused more allocations, loop again
         }
 
         out->Pml4Phys = pml4Phys;

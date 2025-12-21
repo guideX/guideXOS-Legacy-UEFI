@@ -124,3 +124,43 @@ extern "C" UINTN GetTrampolineCodeSize(void)
 {
     return sizeof(g_TrampolineCodeBytes);
 }
+
+// Disabled alternate trampoline implementation to avoid duplicate BootHandoffTrampoline symbol.
+// Keeping file for reference; trampoline.asm provides the active implementation.
+#if 0
+#include <Uefi.h>
+#include <stdint.h>
+
+extern "C" {
+    void __halt(void);
+}
+#pragma intrinsic(__halt)
+
+typedef void (*TrampolineFunc)(void* kernelEntry, void* bootInfo, void* stackTop, void* pml4Phys);
+
+static const uint8_t g_TrampolineCodeBytes[] = { /* ...existing code... */ };
+static TrampolineFunc g_ExecutableTrampoline = nullptr;
+
+extern "C" void SetupTrampoline(void* executableMemory)
+{
+    for (UINTN i = 0; i < sizeof(g_TrampolineCodeBytes); ++i) {
+        ((uint8_t*)executableMemory)[i] = g_TrampolineCodeBytes[i];
+    }
+    g_ExecutableTrampoline = (TrampolineFunc)executableMemory;
+}
+
+extern "C" void BootHandoffTrampoline(void* kernelEntry, void* bootInfo, void* stackTop, void* pml4Phys)
+{
+    if (g_ExecutableTrampoline == nullptr) {
+        g_ExecutableTrampoline = (TrampolineFunc)(void*)g_TrampolineCodeBytes;
+    }
+    g_ExecutableTrampoline(kernelEntry, bootInfo, stackTop, pml4Phys);
+    for (;;) { __halt(); }
+}
+
+extern "C" UINTN GetTrampolineCodeSize(void)
+{
+    return sizeof(g_TrampolineCodeBytes);
+}
+#endif
+
