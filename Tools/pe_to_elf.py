@@ -223,6 +223,46 @@ def to_elf(pe: bytes, custom_entry: int | None = None) -> bytes:
     return bytes(out)
 
 
+def rebase_symbol_address(symbol_addr: int, pe_image_base: int) -> int:
+    """Detect if a symbol address is from a stale map file (different image base)
+    and rebase it to the current PE's image base.
+    
+    Common image bases:
+    - 0x10000000: Legacy NativeAOT/CoreRT default
+    - 0x140000000: Modern NativeAOT default (Windows default for 64-bit)
+    - 0x400000: Standard EXE default
+    
+    This function detects mismatches and corrects them.
+    """
+    # Common stale image bases to check
+    KNOWN_BASES = [0x10000000, 0x140000000, 0x400000, 0x100000000]
+    
+    # Check if symbol falls within expected range for pe_image_base
+    # A valid symbol should be >= image_base and < image_base + reasonable_size
+    reasonable_max_size = 0x10000000  # 256 MB is generous
+    
+    if pe_image_base <= symbol_addr < pe_image_base + reasonable_max_size:
+        # Symbol is already in the right range, no rebasing needed
+        return symbol_addr
+    
+    # Try to detect which old base was used
+    for old_base in KNOWN_BASES:
+        if old_base == pe_image_base:
+            continue
+        if old_base <= symbol_addr < old_base + reasonable_max_size:
+            # Found the old base! Rebase to new base
+            rva = symbol_addr - old_base
+            new_addr = pe_image_base + rva
+            print(f"WARNING: Rebasing symbol from old image base 0x{old_base:X} to 0x{pe_image_base:X}")
+            print(f"         Symbol RVA: 0x{rva:X}, New address: 0x{new_addr:X}")
+            return new_addr
+    
+    # Can't detect old base - warn and use as-is (will likely fail in bootloader)
+    print(f"WARNING: Symbol address 0x{symbol_addr:X} doesn't match PE image base 0x{pe_image_base:X}")
+    print(f"         The Kernel.map file may be stale. Consider deleting it and rebuilding.")
+    return symbol_addr
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Convert PE/COFF executable to ELF64 for guideXOS UEFI bootloader"
@@ -240,19 +280,28 @@ def main() -> int:
     args = ap.parse_args()
 
     pe = args.input.read_bytes()
+    
+    # Parse PE to get the actual image base
+    pe_image_base, _, pe_entry, _ = parse_pe_sections(pe)
+    print(f"PE Image Base: 0x{pe_image_base:X}")
+    print(f"PE Default Entry: 0x{pe_entry:X}")
 
     custom_entry = args.entry
 
     if args.map and custom_entry is None:
         symbol_addr = find_symbol_in_map(args.map, args.symbol)
         if symbol_addr:
+            print(f"Found {args.symbol} in map file at 0x{symbol_addr:X}")
+            
+            # Rebase if necessary (detect stale map files)
+            symbol_addr = rebase_symbol_address(symbol_addr, pe_image_base)
+            
             custom_entry = symbol_addr + args.entry_bias
             if args.entry_bias != 0:
-                print(f"Found {args.symbol} in map file at 0x{symbol_addr:X}; applying bias {args.entry_bias:+#x} => 0x{custom_entry:X}")
-            else:
-                print(f"Found {args.symbol} in map file at 0x{symbol_addr:X}")
+                print(f"Applying bias {args.entry_bias:+#x} => Final entry: 0x{custom_entry:X}")
         else:
             print(f"WARNING: Symbol '{args.symbol}' not found in {args.map}")
+            print(f"         Using PE default entry point instead.")
 
     elf = to_elf(pe, custom_entry)
     args.output.write_bytes(elf)
