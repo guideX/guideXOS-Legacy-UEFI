@@ -471,11 +471,12 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
         v1BootInfo->Flags |= (1u << 1); // framebuffer valid
 
     // Allocate a simple stack that survives ExitBootServices
-    // (Some kernels assume a larger / aligned stack than what UEFI leaves us. )
-    EFI_PHYSICAL_ADDRESS stackPhys = 0;
-    const UINTN stackPages = 16; // 64 KiB
+    // (Some kernels assume a larger / aligned stack than what UEFI leaves us.)
+    // CRITICAL: Allocate stack at high memory to avoid conflicts with kernel
+    const UINTN stackPages = 16; // 64 KiB stack
+    EFI_PHYSICAL_ADDRESS stackPhys = 0x100000000ULL - (stackPages * EFI_PAGE_SIZE); // Just below 4GB
     EFI_STATUS stackStatus = SystemTable->BootServices->AllocatePages(
-        AllocateAnyPages,
+        AllocateMaxAddress,  // Use max address mode to avoid kernel region
         EfiLoaderData,
         stackPages,
         &stackPhys
