@@ -747,7 +747,28 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     );
 
     guideXOS::debug::SerialPrint("[BOOT] About to handoff via trampoline...\n");
+    guideXOS::debug::SerialPrint("[BOOT] Trampoline at: ");
+    guideXOS::debug::SerialPrintHex64(trampolinePhys);
+    guideXOS::debug::SerialPrint("\n");
+    guideXOS::debug::SerialPrint("[BOOT] Kernel entry: ");
+    guideXOS::debug::SerialPrintHex64(entryPhys);
+    guideXOS::debug::SerialPrint("\n");
+    guideXOS::debug::SerialPrint("[BOOT] BootInfo at: ");
+    guideXOS::debug::SerialPrintHex64((uint64_t)(UINTN)v1BootInfo);
+    guideXOS::debug::SerialPrint("\n");
+    guideXOS::debug::SerialPrint("[BOOT] Stack top: ");
+    guideXOS::debug::SerialPrintHex64((uint64_t)(UINTN)stackTop);
+    guideXOS::debug::SerialPrint("\n");
+    guideXOS::debug::SerialPrint("[BOOT] PML4: ");
+    guideXOS::debug::SerialPrintHex64(pt.Pml4Phys);
+    guideXOS::debug::SerialPrint("\n");
     guideXOS::debug::ShowProgress(v1BootInfo, 5);
+
+    // Validate the trampoline mapping before jumping
+    guideXOS::debug::SerialPrint("\n[BOOT] Validating trampoline mapping:\n");
+    guideXOS::debug::ValidatePageMapping(pt.Pml4Phys, trampolinePhys);
+
+    guideXOS::debug::SerialPrint("\n[BOOT] === CALLING TRAMPOLINE NOW ===\n");
 
     BootHandoffTrampoline((void*)(UINTN)entryPhys, (void*)v1BootInfo, stackTop, (void*)(UINTN)pt.Pml4Phys);
 

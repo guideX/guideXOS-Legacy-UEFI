@@ -8,18 +8,33 @@
 // MSVC intrinsics
 extern "C" {
     void __halt(void);
+    unsigned char __inbyte(unsigned short port);
+    void __outbyte(unsigned short port, unsigned char value);
 }
-#pragma intrinsic(__halt)
+#pragma intrinsic(__halt, __inbyte, __outbyte)
 
 // Declare the function type for the trampoline
 // MS x64 ABI: RCX=1st, RDX=2nd, R8=3rd, R9=4th
 typedef void (*TrampolineFunc)(void* kernelEntry, void* bootInfo, void* stackTop, void* pml4Phys);
 
+// Serial output helpers for debugging (inline, no stack usage after trampoline)
+static inline void serial_putchar(char c) {
+    while ((__inbyte(0x3FD) & 0x20) == 0) { }
+    __outbyte(0x3F8, (unsigned char)c);
+}
+
+static inline void serial_print(const char* s) {
+    while (*s) {
+        if (*s == '\n') serial_putchar('\r');
+        serial_putchar(*s++);
+    }
+}
+
 // Raw machine code for the final handoff sequence
 // This is position-independent code that:
 // 1. cli (disable interrupts)
 // 2. Save kernel entry to r12, bootInfo to r13
-// 3. Load CR3 from r9
+// 3. Load CR3 from r9 (if non-null)
 // 4. Switch stack to r8
 // 5. Set up MS x64 calling convention (RCX = bootInfo)
 // 6. Jump to kernel
@@ -29,34 +44,96 @@ typedef void (*TrampolineFunc)(void* kernelEntry, void* bootInfo, void* stackTop
 //   RDX = bootInfo
 //   R8  = stackTop
 //   R9  = pml4Phys
+//
+// CRITICAL: Stack alignment for JMP (not CALL):
+//   - Since JMP doesn't push return address, RSP must be 16-byte aligned at entry
+//   - We align to 16, then subtract 32 (shadow space) to keep it 16-byte aligned
+//   - Result: RSP % 16 == 0 when kernel starts executing
 
-// The trampoline code bytes
+// The trampoline code bytes with serial debug markers
 // We allocate this at runtime in executable memory
 static const uint8_t g_TrampolineCodeBytes[] = {
+    // === STAGE 1: Disable interrupts and save parameters ===
     // cli - disable interrupts
     0xFA,
     
-    // mov r12, rcx  ; r12 = kernelEntry (save)
+    // Output 'T' to serial (trampoline start) - uses dx, al
+    0xBA, 0xFD, 0x03,           // mov dx, 0x3FD (line status)
+    // .wait1:
+    0xEC,                        // in al, dx
+    0xA8, 0x20,                  // test al, 0x20
+    0x74, 0xFB,                  // jz .wait1 (-5)
+    0xBA, 0xF8, 0x03,           // mov dx, 0x3F8 (data)
+    0xB0, 0x54,                  // mov al, 'T'
+    0xEE,                        // out dx, al
+    
+    // mov r12, rcx  ; r12 = kernelEntry (save BEFORE we touch rcx)
     0x49, 0x89, 0xCC,
     
-    // mov r13, rdx  ; r13 = bootInfo (save)
+    // mov r13, rdx  ; r13 = bootInfo (save BEFORE we touch rdx)
     0x49, 0x89, 0xD5,
     
-    // mov rax, r9   ; rax = pml4Phys
-    0x4C, 0x89, 0xC8,
+    // mov r14, r8   ; r14 = stackTop (save)
+    0x4D, 0x89, 0xC6,
     
-    // mov cr3, rax  ; load new page tables
+    // mov r15, r9   ; r15 = pml4Phys (save)
+    0x4D, 0x89, 0xCF,
+
+    // Output '1' to serial (parameters saved)
+    0xBA, 0xFD, 0x03,           // mov dx, 0x3FD
+    // .wait2:
+    0xEC,                        // in al, dx
+    0xA8, 0x20,                  // test al, 0x20
+    0x74, 0xFB,                  // jz .wait2
+    0xBA, 0xF8, 0x03,           // mov dx, 0x3F8
+    0xB0, 0x31,                  // mov al, '1'
+    0xEE,                        // out dx, al
+    
+    // === STAGE 2: Load new page tables (if pml4Phys != 0) ===
+    // test r15, r15
+    0x4D, 0x85, 0xFF,
+    // jz .skip_cr3
+    0x74, 0x06,                  // jz +6 (skip mov cr3)
+    
+    // mov rax, r15   ; rax = pml4Phys
+    0x4C, 0x89, 0xF8,
+    
+    // mov cr3, rax  ; load new page tables - THIS IS THE CRITICAL MOMENT
     0x0F, 0x22, 0xD8,
     
-    // mov rsp, r8   ; switch to new stack
-    0x4C, 0x89, 0xC4,
+    // .skip_cr3:
+    // Output '2' to serial (CR3 loaded or skipped)
+    0xBA, 0xFD, 0x03,           // mov dx, 0x3FD
+    // .wait3:
+    0xEC,                        // in al, dx
+    0xA8, 0x20,                  // test al, 0x20
+    0x74, 0xFB,                  // jz .wait3
+    0xBA, 0xF8, 0x03,           // mov dx, 0x3F8
+    0xB0, 0x32,                  // mov al, '2'
+    0xEE,                        // out dx, al
+    
+    // === STAGE 3: Switch to new stack ===
+    // mov rsp, r14   ; switch to new stack
+    0x4C, 0x89, 0xF4,
     
     // and rsp, 0xFFFFFFFFFFFFFFF0 ; ensure 16-byte alignment
     0x48, 0x83, 0xE4, 0xF0,
     
-    // sub rsp, 40   ; allocate shadow space (32) + 8 for alignment
-    0x48, 0x83, 0xEC, 0x28,
+    // sub rsp, 32   ; allocate shadow space (32 bytes) - keeps 16-byte alignment
+    // For JMP (not CALL), kernel expects RSP % 16 == 0 at entry
+    0x48, 0x83, 0xEC, 0x20,
     
+    // Output '3' to serial (stack switched)
+    0xBA, 0xFD, 0x03,           // mov dx, 0x3FD
+    // .wait4:
+    0xEC,                        // in al, dx
+    0xA8, 0x20,                  // test al, 0x20
+    0x74, 0xFB,                  // jz .wait4
+    0xBA, 0xF8, 0x03,           // mov dx, 0x3F8
+    0xB0, 0x33,                  // mov al, '3'
+    0xEE,                        // out dx, al
+    
+    // === STAGE 4: Set up kernel call parameters ===
     // mov rcx, r13  ; RCX = bootInfo (first parameter for kernel)
     0x4C, 0x89, 0xE9,
     
@@ -69,10 +146,40 @@ static const uint8_t g_TrampolineCodeBytes[] = {
     // xor r9, r9    ; clear fourth param  
     0x4D, 0x31, 0xC9,
     
+    // Output 'J' to serial (about to jump)
+    0xBA, 0xFD, 0x03,           // mov dx, 0x3FD
+    // .wait5:
+    0xEC,                        // in al, dx
+    0xA8, 0x20,                  // test al, 0x20
+    0x74, 0xFB,                  // jz .wait5
+    0xBA, 0xF8, 0x03,           // mov dx, 0x3F8
+    0xB0, 0x4A,                  // mov al, 'J'
+    0xEE,                        // out dx, al
+    
+    // Output newline
+    0xBA, 0xFD, 0x03,
+    0xEC, 0xA8, 0x20, 0x74, 0xFB,
+    0xBA, 0xF8, 0x03,
+    0xB0, 0x0D,                  // CR
+    0xEE,
+    0xBA, 0xFD, 0x03,
+    0xEC, 0xA8, 0x20, 0x74, 0xFB,
+    0xBA, 0xF8, 0x03,
+    0xB0, 0x0A,                  // LF
+    0xEE,
+    
+    // === STAGE 5: Jump to kernel ===
     // jmp r12       ; jump to kernel (indirect through r12)
     0x41, 0xFF, 0xE4,
     
-    // --- Should never reach here ---
+    // === PANIC: Should never reach here ===
+    // Output '!' to serial (panic)
+    0xBA, 0xFD, 0x03,
+    0xEC, 0xA8, 0x20, 0x74, 0xFB,
+    0xBA, 0xF8, 0x03,
+    0xB0, 0x21,                  // '!'
+    0xEE,
+    
     // hlt
     0xF4,
     
