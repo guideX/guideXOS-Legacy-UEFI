@@ -1,0 +1,522 @@
+#!/usr/bin/env pwsh
+<#
+.SYNOPSIS
+    guideXOS Build System - Automated build script for UEFI bootloader and kernel
+
+.DESCRIPTION
+    This script automates the complete build process:
+    1. Build UEFI bootloader (C++)
+    2. Build C# kernel (NativeAOT)
+    3. Convert kernel from PE to ELF64 format
+    4. Build ramdisk image
+    5. Assemble ESP structure
+    6. Create bootable disk image or ISO
+
+.PARAMETER SkipBootloader
+    Skip building the UEFI bootloader
+
+.PARAMETER SkipKernel
+    Skip building the C# kernel
+
+.PARAMETER SkipRamdisk
+    Skip building the ramdisk
+
+.PARAMETER SkipConversion
+    Skip PE to ELF conversion
+
+.PARAMETER CreateISO
+    Create bootable ISO instead of disk image
+
+.PARAMETER Clean
+    Clean build outputs before building
+
+.EXAMPLE
+    .\build.ps1
+    Build everything
+
+.EXAMPLE
+    .\build.ps1 -SkipBootloader
+    Build only kernel and ramdisk (use existing bootloader)
+
+.EXAMPLE
+    .\build.ps1 -CreateISO
+    Build and create ISO image
+#>
+
+param(
+    [switch]$SkipBootloader,
+    [switch]$SkipKernel,
+    [switch]$SkipRamdisk,
+    [switch]$SkipConversion,
+    [switch]$CreateISO,
+    [switch]$Clean
+)
+
+$ErrorActionPreference = "Stop"
+
+# Color output functions
+function Write-Header($text) {
+    Write-Host "`n=== $text ===" -ForegroundColor Cyan
+}
+
+function Write-Success($text) {
+    Write-Host "  ? $text" -ForegroundColor Green
+}
+
+function Write-Warning($text) {
+    Write-Host "  ? $text" -ForegroundColor Yellow
+}
+
+function Write-Info($text) {
+    Write-Host "  ? $text" -ForegroundColor Gray
+}
+
+function Write-Error($text) {
+    Write-Host "  ? $text" -ForegroundColor Red
+}
+
+# Paths
+$RootDir = $PSScriptRoot
+$BootloaderProject = "$RootDir\guideXOSBootLoader\guideXOSBootLoader.vcxproj"
+$KernelProject = "$RootDir\guideXOS\guideXOS.csproj"
+$RamdiskSrc = "$RootDir\ramdisk_src"
+$ESPDir = "$RootDir\ESP"
+$ToolsDir = "$RootDir\tools"
+
+Write-Header "guideXOS Build System"
+Write-Info "Root directory: $RootDir"
+
+# Check for required tools
+function Test-Command($cmdname) {
+    return [bool](Get-Command -Name $cmdname -ErrorAction SilentlyContinue)
+}
+
+Write-Header "Checking Build Tools"
+
+# Check for MSBuild
+if (-not $SkipBootloader) {
+    $msbuild = $null
+    if (Test-Path "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe") {
+        $msbuild = "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
+    } elseif (Test-Path "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe") {
+        $msbuild = "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe"
+    } elseif (Test-Path "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe") {
+        $msbuild = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+    } elseif (Test-Command msbuild) {
+        $msbuild = "msbuild"
+    }
+    
+    if (-not $msbuild) {
+        Write-Error "MSBuild not found! Install Visual Studio 2022 or add MSBuild to PATH"
+        exit 1
+    }
+    Write-Success "MSBuild found: $msbuild"
+    
+    # Check for EDK II (required for bootloader)
+    $edkiiPaths = @(
+        "C:\edk2",
+        "$RootDir\edk2",
+        "$RootDir\edk2-headers",
+        "$env:EDK2_PATH"
+    )
+    
+    $edkiiFound = $false
+    foreach ($path in $edkiiPaths) {
+        if ($path -and (Test-Path "$path\MdePkg\Include\Uefi.h")) {
+            Write-Success "EDK II found: $path"
+            $edkiiFound = $true
+            break
+        }
+    }
+    
+    if (-not $edkiiFound) {
+        Write-Warning "EDK II not found - bootloader may not build"
+        Write-Warning "The bootloader needs UEFI headers (Uefi.h)"
+        Write-Warning "Options:"
+        Write-Warning "  1. See SETUP_EDK2.md for full EDK II setup"
+        Write-Warning "  2. Run: .\build.ps1 -SkipBootloader (use existing bootloader)"
+        Write-Warning "  3. Build bootloader in WSL/Linux instead"
+    }
+}
+
+# Check for .NET SDK
+if (-not $SkipKernel) {
+    if (-not (Test-Command dotnet)) {
+        Write-Error ".NET SDK not found! Install .NET 7 SDK"
+        exit 1
+    }
+    $dotnetVersion = dotnet --version
+    Write-Success ".NET SDK found: $dotnetVersion"
+}
+
+# Check for Python
+$pythonExe = $null
+$pythonExeArgs = @()
+if ((-not $SkipRamdisk) -or (-not $SkipConversion)) {
+    if (Test-Command py) {
+        $pythonExe = "py"
+        $pythonExeArgs = @("-3")
+        $pythonVersion = & $pythonExe @($pythonExeArgs + @("--version"))
+        Write-Success "Python launcher found: $pythonVersion"
+    } elseif (Test-Command python) {
+        $pythonExe = "python"
+        $pythonExeArgs = @()
+        $pythonVersion = python --version
+        Write-Success "Python found: $pythonVersion"
+    } elseif (-not $SkipRamdisk) {
+        Write-Error "Python not found! Install Python 3.x"
+        exit 1
+    } else {
+        Write-Warning "Python not found - ramdisk step is skipped, but PE?ELF fallback conversion will not be available"
+    }
+}
+
+# Check for objcopy (optional but recommended)
+$objcopyPath = $null
+if (-not $SkipConversion) {
+    # Try to find objcopy
+    $possiblePaths = @(
+        "C:\msys64\mingw64\bin\objcopy.exe",
+        "C:\msys64\usr\bin\objcopy.exe",
+        "C:\Program Files\LLVM\bin\llvm-objcopy.exe"
+    )
+    
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            $objcopyPath = $path
+            break
+        }
+    }
+    
+    if (-not $objcopyPath -and (Test-Command objcopy)) {
+        $objcopyPath = "objcopy"
+    }
+    
+    if (-not $objcopyPath -and (Test-Command llvm-objcopy)) {
+        $objcopyPath = "llvm-objcopy"
+    }
+    
+    if ($objcopyPath) {
+        Write-Success "objcopy found: $objcopyPath"
+    } else {
+        Write-Warning "objcopy not found - you'll need to convert kernel.bin to ELF manually"
+        Write-Warning "Install MSYS2 or LLVM, or use WSL for conversion"
+        $SkipConversion = $true
+    }
+}
+
+# Clean build outputs
+if ($Clean) {
+    Write-Header "Cleaning Build Outputs"
+    
+    if (Test-Path "$RootDir\guideXOS\bin") {
+        Remove-Item -Recurse -Force "$RootDir\guideXOS\bin"
+        Write-Success "Cleaned kernel build output"
+    }
+    
+    if (Test-Path "$RootDir\guideXOS\obj") {
+        Remove-Item -Recurse -Force "$RootDir\guideXOS\obj"
+    }
+    
+    if (Test-Path "$RootDir\guideXOSBootLoader\x64") {
+        Remove-Item -Recurse -Force "$RootDir\guideXOSBootLoader\x64"
+        Write-Success "Cleaned bootloader build output"
+    }
+    
+    if (Test-Path $ESPDir) {
+        Remove-Item -Recurse -Force $ESPDir
+        Write-Success "Cleaned ESP directory"
+    }
+}
+
+# Step 1: Build UEFI Bootloader
+if (-not $SkipBootloader) {
+    Write-Header "[1/5] Building UEFI Bootloader"
+    
+    if (-not (Test-Path $BootloaderProject)) {
+        Write-Error "Bootloader project not found: $BootloaderProject"
+        exit 1
+    }
+    
+    Write-Info "Building with MSBuild..."
+    & $msbuild $BootloaderProject `
+        /p:Configuration=Release `
+        /p:Platform=x64 `
+        /v:minimal `
+        /nologo
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Bootloader build failed with exit code $LASTEXITCODE"
+        exit 1
+    }
+    
+    $bootloaderOutput = "$RootDir\guideXOSBootLoader\x64\Release\guideXOSBootLoader.efi"
+    if (Test-Path $bootloaderOutput) {
+        $size = (Get-Item $bootloaderOutput).Length
+        Write-Success "Bootloader built successfully ($([math]::Round($size/1KB, 2)) KB)"
+    } else {
+        Write-Error "Bootloader binary not found at: $bootloaderOutput"
+        exit 1
+    }
+} else {
+    Write-Header "[1/5] Skipping Bootloader Build"
+}
+
+# Step 2: Build C# Kernel
+if (-not $SkipKernel) {
+    Write-Header "[2/5] Building C# Kernel (Custom ILCompiler)"
+
+    if (-not (Test-Path $KernelProject)) {
+        Write-Error "Kernel project not found: $KernelProject"
+        exit 1
+    }
+
+    Write-Info "Building kernel (ILCompiler/CoreRT style)..."
+
+    # Use dotnet build (this repo's ILCompiler pipeline produces bin\\Release\\net7.0\\win-x64\\native\\guideXOS.exe)
+    dotnet build $KernelProject -c Release
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Kernel build failed with exit code $LASTEXITCODE"
+        exit 1
+    }
+
+    # Prefer the known ILCompiler native output
+    $possibleOutputs = @(
+        "$RootDir\\bin\\Release\\net7.0\\win-x64\\native\\guideXOS.exe",
+        "$RootDir\\guideXOS\\bin\\Release\\net7.0\\win-x64\\native\\guideXOS.exe",
+        "$RootDir\\bin\\Release\\net7.0\\win-x64\\guideXOS.exe"
+    )
+
+    $kernelOutput = $null
+    foreach ($path in $possibleOutputs) {
+        if (Test-Path $path) { $kernelOutput = $path; break }
+    }
+
+    if ($kernelOutput) {
+        $size = (Get-Item $kernelOutput).Length
+        Write-Success "Kernel built successfully ($([math]::Round($size/1MB, 2)) MB)"
+        Write-Info "Kernel output: $kernelOutput"
+
+        # Copy to a stable location so the conversion step can find it
+        $expectedLocation = "$RootDir\\bin\\Release\\net7.0\\win-x64\\native\\guideXOS.exe"
+        $expectedDir = Split-Path $expectedLocation -Parent
+        if (-not (Test-Path $expectedDir)) {
+            New-Item -ItemType Directory -Force -Path $expectedDir | Out-Null
+        }
+        if ($kernelOutput -ne $expectedLocation) {
+            Copy-Item $kernelOutput $expectedLocation -Force
+        }
+    } else {
+        Write-Error "Native kernel binary not found in expected locations"
+        foreach ($path in $possibleOutputs) { Write-Warning "  - $path" }
+        exit 1
+    }
+
+} else {
+    Write-Header "[2/5] Skipping Kernel Build"
+}
+
+# Step 3: Convert Kernel to ELF
+if (-not $SkipConversion) {
+    Write-Header "[3/5] Converting Kernel to ELF64 Format"
+    
+    # The native kernel is in PE format (.exe)
+    $kernelPE = "$RootDir\bin\Release\net7.0\win-x64\native\guideXOS.exe"
+    if (-not (Test-Path $kernelPE)) {
+        Write-Warning "Kernel PE not found at: $kernelPE"
+        Write-Info "Trying alternate location..."
+        $kernelPE = "$RootDir\guideXOS\bin\Release\net7.0\win-x64\native\guideXOS.exe"
+    }
+    $kernelELF = "$RootDir\kernel.elf"
+    $kernelMap = "$RootDir\guideXOS\Kernel.map"
+    
+    if (-not (Test-Path $kernelPE)) {
+        Write-Error "Kernel PE binary not found: $kernelPE"
+        exit 1
+    }
+
+    # For UEFI boot, we need to use KMain as the entry point, not Entry
+    # Use our Python PE to ELF converter with map file support
+    $peToElf = Join-Path $RootDir "tools\pe_to_elf.py"
+    
+    if (-not (Test-Path $peToElf)) {
+        Write-Error "PE to ELF converter missing: $peToElf"
+        exit 1
+    }
+
+    if (-not $pythonExe) {
+        Write-Error "Python is required for PE?ELF conversion but was not found."
+        exit 1
+    }
+
+    Write-Info "Converting PE to ELF64 with KMain entry point..."
+    
+    # Check if map file exists for symbol lookup
+    $conversionArgs = @($peToElf, $kernelPE, $kernelELF)
+    if (Test-Path $kernelMap) {
+        Write-Info "Using Kernel.map to find KMain symbol..."
+        # NOTE: In this repo's ILCompiler build, the map-reported address for KMain
+        # can point 2 bytes before the actual function body (landing on 0xFE 0xFF).
+        # Apply a +2 bias to start at the real prologue.
+        $conversionArgs += @("--map", $kernelMap, "--symbol", "KMain", "--entry-bias", "0x2")
+    } else {
+        Write-Warning "Kernel.map not found - using default PE entry point"
+        Write-Warning "This may cause boot issues if Entry != KMain"
+    }
+    
+    & $pythonExe @pythonExeArgs @conversionArgs
+    
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $kernelELF)) {
+        Write-Error "PE?ELF conversion failed"
+        exit 1
+    }
+
+    $hdr = [System.IO.File]::ReadAllBytes($kernelELF)
+    $isElf = ($hdr.Length -ge 4 -and $hdr[0] -eq 0x7F -and $hdr[1] -eq 0x45 -and $hdr[2] -eq 0x4C -and $hdr[3] -eq 0x46)
+    if (-not $isElf) {
+        Write-Error "Conversion did not produce ELF output"
+        exit 1
+    }
+
+    $size = (Get-Item $kernelELF).Length
+    Write-Success "Kernel converted to ELF64 ($([math]::Round($size/1MB, 2)) MB)"
+} else {
+    Write-Header "[3/5] Skipping Kernel Conversion"
+}
+
+# Step 4: Build Ramdisk
+if (-not $SkipRamdisk) {
+    Write-Header "[4/5] Building Ramdisk Image"
+    
+    if (-not (Test-Path $RamdiskSrc)) {
+        Write-Warning "Ramdisk source directory not found: $RamdiskSrc"
+        Write-Warning "Creating minimal ramdisk structure..."
+        
+        # Create minimal ramdisk structure
+        New-Item -ItemType Directory -Force -Path "$RamdiskSrc\Images" | Out-Null
+        New-Item -ItemType Directory -Force -Path "$RamdiskSrc\Fonts" | Out-Null
+        
+        # Create placeholder files
+        Write-Info "Creating placeholder files (you should replace these with real assets)..."
+        
+        # Create 16x16 placeholder PNGs (minimal valid PNG)
+        $pngHeader = [byte[]](0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+        Set-Content -Path "$RamdiskSrc\Images\Cursor.png" -Value $pngHeader -Encoding Byte
+        Set-Content -Path "$RamdiskSrc\Images\Grab.png" -Value $pngHeader -Encoding Byte
+        Set-Content -Path "$RamdiskSrc\Images\Busy.png" -Value $pngHeader -Encoding Byte
+        
+        # Create placeholder font file
+        Set-Content -Path "$RamdiskSrc\Fonts\enludo.btf" -Value "PLACEHOLDER_FONT" -Encoding ASCII
+        
+        Write-Warning "Created placeholder files - replace with real assets!"
+    }
+    
+    $ramdiskBuilder = "$ToolsDir\ramdisk_builder.py"
+    $ramdiskOutput = "$RootDir\ramdisk.img"
+    
+    if (-not (Test-Path $ramdiskBuilder)) {
+        Write-Error "Ramdisk builder not found: $ramdiskBuilder"
+        exit 1
+    }
+    
+    Write-Info "Building ramdisk with Python..."
+    & $pythonExe @pythonExeArgs $ramdiskBuilder $RamdiskSrc $ramdiskOutput
+    
+    if ($LASTEXITCODE -eq 0 -and (Test-Path $ramdiskOutput)) {
+        $size = (Get-Item $ramdiskOutput).Length
+        Write-Success "Ramdisk built successfully ($([math]::Round($size/1KB, 2)) KB)"
+    } else {
+        Write-Error "Ramdisk build failed"
+        exit 1
+    }
+} else {
+    Write-Header "[4/5] Skipping Ramdisk Build"
+}
+
+# Step 5: Assemble ESP Structure
+Write-Header "[5/5] Assembling ESP Structure"
+
+# Create ESP directory structure
+New-Item -ItemType Directory -Force -Path "$ESPDir\EFI\BOOT" | Out-Null
+Write-Success "Created ESP directory structure"
+
+# Copy bootloader
+$bootloaderSrc = "$RootDir\guideXOSBootLoader\x64\Release\guideXOSBootLoader.efi"
+$bootloaderDst = "$ESPDir\EFI\BOOT\BOOTX64.EFI"
+if (Test-Path $bootloaderSrc) {
+    Copy-Item $bootloaderSrc $bootloaderDst -Force
+    Write-Success "Copied bootloader: BOOTX64.EFI"
+} else {
+    Write-Error "Bootloader not found: $bootloaderSrc"
+    exit 1
+}
+
+# Copy kernel
+$kernelSrc = "$RootDir\kernel.elf"
+$kernelDst = "$ESPDir\kernel.elf"
+if (Test-Path $kernelSrc) {
+    Copy-Item $kernelSrc $kernelDst -Force
+    Write-Success "Copied kernel: kernel.elf"
+} else {
+    Write-Warning "Kernel ELF not found: $kernelSrc"
+    Write-Warning "You need to convert kernel.bin to ELF format manually"
+}
+
+# Copy ramdisk
+$ramdiskSrc = "$RootDir\ramdisk.img"
+$ramdiskDst = "$ESPDir\ramdisk.img"
+if (Test-Path $ramdiskSrc) {
+    Copy-Item $ramdiskSrc $ramdiskDst -Force
+    Write-Success "Copied ramdisk: ramdisk.img"
+} else {
+    Write-Warning "Ramdisk not found: $ramdiskSrc"
+}
+
+# Verify ESP structure
+Write-Header "Build Summary"
+Write-Info "ESP Structure:"
+if (Test-Path "$ESPDir\EFI\BOOT\BOOTX64.EFI") {
+    $size = (Get-Item "$ESPDir\EFI\BOOT\BOOTX64.EFI").Length
+    Write-Success "  ESP\EFI\BOOT\BOOTX64.EFI ($([math]::Round($size/1KB, 2)) KB)"
+} else {
+    Write-Error "  ESP\EFI\BOOT\BOOTX64.EFI - MISSING"
+}
+
+if (Test-Path "$ESPDir\kernel.elf") {
+    $size = (Get-Item "$ESPDir\kernel.elf").Length
+    Write-Success "  ESP\kernel.elf ($([math]::Round($size/1MB, 2)) MB)"
+} else {
+    Write-Error "  ESP\kernel.elf - MISSING"
+}
+
+if (Test-Path "$ESPDir\ramdisk.img") {
+    $size = (Get-Item "$ESPDir\ramdisk.img").Length
+    Write-Success "  ESP\ramdisk.img ($([math]::Round($size/1KB, 2)) KB)"
+} else {
+    Write-Error "  ESP\ramdisk.img - MISSING"
+}
+
+# Optional: Create bootable image
+if ($CreateISO) {
+    Write-Header "Creating Bootable ISO"
+    Write-Warning "ISO creation requires external tools (mkisofs/genisoimage)"
+    Write-Info "Use WSL or Linux for ISO creation, or create disk image instead"
+}
+
+Write-Header "Build Complete!"
+Write-Info "ESP directory: $ESPDir"
+Write-Info ""
+Write-Info "Next steps:"
+Write-Info "  1. Test in QEMU:"
+Write-Info "     qemu-system-x86_64 -bios OVMF.fd -hda fat:rw:ESP -m 1024M -serial stdio"
+Write-Info ""
+Write-Info "  2. Create disk image (Linux/WSL):"
+Write-Info "     dd if=/dev/zero of=guidexos.img bs=1M count=100"
+Write-Info "     mkfs.vfat -F 32 guidexos.img"
+Write-Info "     sudo mount -o loop guidexos.img /mnt"
+Write-Info "     sudo cp -r ESP/* /mnt/"
+Write-Info "     sudo umount /mnt"
+Write-Info ""
+Write-Info "  3. Test with disk image:"
+Write-Info "     qemu-system-x86_64 -bios OVMF.fd -drive file=guidexos.img,format=raw -m 1024M -serial stdio"
