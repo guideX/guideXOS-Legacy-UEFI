@@ -1,0 +1,12 @@
+This is a placeholder file.
+
+Replace this with a real 16x16 PNG cursor image.
+
+The cursor should be a simple arrow or pointer design.
+You can create one using any image editor (Paint.NET, GIMP, Photoshop, etc.)
+
+Format requirements:
+- 16x16 pixels
+- PNG format
+- Transparent background recommended
+- White or light color for the cursor

@@ -1,0 +1,12 @@
+This is a placeholder font file.
+
+Replace this with a real bitmap font in BTF (Bitmap Font) format.
+
+The enludo.btf font is the system font used for text rendering.
+
+You'll need to:
+1. Find or create a bitmap font
+2. Convert it to BTF format using your font conversion tools
+3. Replace this placeholder file
+
+Without a real font file, text rendering may fail or show garbled characters.
