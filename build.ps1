@@ -238,26 +238,45 @@ if (-not $SkipBootloader) {
         exit 1
     }
     
+    # Add NASM to PATH if it exists in Tools directory (required for assembly)
+    $nasmPath = "$ToolsDir\nasm.exe"
+    if (Test-Path $nasmPath) {
+        $env:PATH = "$ToolsDir;$env:PATH"
+        Write-Success "Added NASM to PATH from Tools directory"
+    } elseif (-not (Test-Command nasm)) {
+        Write-Warning "NASM not found - assembly files may fail to build"
+        Write-Warning "Install NASM or place nasm.exe in the Tools directory"
+    }
+    
     Write-Info "Building with MSBuild..."
     & $msbuild $BootloaderProject `
         /p:Configuration=Release `
         /p:Platform=x64 /p:IntDir=x64\Release\build\ `
         /v:minimal `
-        /nologo
+        /nologo `
+        /t:Rebuild
     
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Bootloader build failed with exit code $LASTEXITCODE"
         exit 1
     }
     
-    $bootloaderOutput = "$RootDir\guideXOSBootLoader\x64\Release\guideXOSBootLoader.efi"
-    if (Test-Path $bootloaderOutput) {
-        $size = (Get-Item $bootloaderOutput).Length
-        Write-Success "Bootloader built successfully ($([math]::Round($size/1KB, 2)) KB)"
+    # Check for output - try .efi first, then .exe (UEFI apps can use either extension)
+    $bootloaderOutputEfi = "$RootDir\guideXOSBootLoader\x64\Release\guideXOSBootLoader.efi"
+    $bootloaderOutputExe = "$RootDir\guideXOSBootLoader\x64\Release\guideXOSBootLoader.exe"
+    
+    if (Test-Path $bootloaderOutputEfi) {
+        $bootloaderOutput = $bootloaderOutputEfi
+    } elseif (Test-Path $bootloaderOutputExe) {
+        $bootloaderOutput = $bootloaderOutputExe
+        Write-Info "Using .exe output (will be copied as BOOTX64.EFI)"
     } else {
-        Write-Error "Bootloader binary not found at: $bootloaderOutput"
+        Write-Error "Bootloader binary not found at: $bootloaderOutputEfi or $bootloaderOutputExe"
         exit 1
     }
+    
+    $size = (Get-Item $bootloaderOutput).Length
+    Write-Success "Bootloader built successfully ($([math]::Round($size/1KB, 2)) KB)"
 } else {
     Write-Header "[1/5] Skipping Bootloader Build"
 }
@@ -441,14 +460,19 @@ Write-Header "[5/5] Assembling ESP Structure"
 New-Item -ItemType Directory -Force -Path "$ESPDir\EFI\BOOT" | Out-Null
 Write-Success "Created ESP directory structure"
 
-# Copy bootloader
-$bootloaderSrc = "$RootDir\guideXOSBootLoader\x64\Release\guideXOSBootLoader.efi"
+# Copy bootloader (try .efi first, then .exe)
+$bootloaderSrcEfi = "$RootDir\guideXOSBootLoader\x64\Release\guideXOSBootLoader.efi"
+$bootloaderSrcExe = "$RootDir\guideXOSBootLoader\x64\Release\guideXOSBootLoader.exe"
 $bootloaderDst = "$ESPDir\EFI\BOOT\BOOTX64.EFI"
-if (Test-Path $bootloaderSrc) {
-    Copy-Item $bootloaderSrc $bootloaderDst -Force
-    Write-Success "Copied bootloader: BOOTX64.EFI"
+
+if (Test-Path $bootloaderSrcEfi) {
+    Copy-Item $bootloaderSrcEfi $bootloaderDst -Force
+    Write-Success "Copied bootloader: BOOTX64.EFI (from .efi)"
+} elseif (Test-Path $bootloaderSrcExe) {
+    Copy-Item $bootloaderSrcExe $bootloaderDst -Force
+    Write-Success "Copied bootloader: BOOTX64.EFI (from .exe)"
 } else {
-    Write-Error "Bootloader not found: $bootloaderSrc"
+    Write-Error "Bootloader not found: $bootloaderSrcEfi or $bootloaderSrcExe"
     exit 1
 }
 
