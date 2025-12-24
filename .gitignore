@@ -5,3 +5,5 @@
 /Docs
 /guideXOSBootLoader/x64
 /guideXOS/Kernel.map
+/x64/Debug/guideXOSBootLoader.exe
+/x64/Debug/guideXOSBootLoader.efi

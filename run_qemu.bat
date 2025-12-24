@@ -46,6 +46,17 @@ if not exist "ESP\ramdisk.img" (
     echo   [OK] ramdisk.img found
 )
 
+REM Ensure the UEFI Shell will automatically launch our bootloader.
+REM Many OVMF setups default to the internal shell when NVRAM vars are missing.
+REM Putting startup.nsh at the FS root makes the shell chainload BOOTX64.EFI.
+if not exist "ESP\startup.nsh" (
+    echo Creating ESP\startup.nsh to chainload EFI\BOOT\BOOTX64.EFI ...
+    > "ESP\startup.nsh" echo fs0:
+    >> "ESP\startup.nsh" echo \EFI\BOOT\BOOTX64.EFI
+) else (
+    echo   [OK] startup.nsh found
+)
+
 echo.
 echo Starting QEMU...
 echo Press Ctrl+C in this window to exit QEMU
@@ -53,10 +64,13 @@ echo Serial output will appear below:
 echo ----------------------------------------
 echo.
 
-REM Launch QEMU using pflash for UEFI firmware (more reliable)
+REM NOTE:
+REM Use QEMU's FAT block device and attach it as a real drive.
+
 "C:\Program Files\qemu\qemu-system-x86_64.exe" ^
     -drive if=pflash,format=raw,readonly=on,file=OVMF.fd ^
-    -drive file=fat:rw:ESP,format=raw ^
+    -drive if=none,id=esp,format=raw,file=fat:rw:ESP ^
+    -device ide-hd,drive=esp ^
     -m 1024M ^
     -serial stdio ^
     -no-reboot ^

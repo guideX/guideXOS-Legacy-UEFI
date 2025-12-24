@@ -30,6 +30,9 @@
 .PARAMETER Clean
     Clean build outputs before building
 
+.PARAMETER BootloaderOnly
+    Limit build to bootloader only (skip kernel, ramdisk, conversion)
+
 .EXAMPLE
     .\build.ps1
     Build everything
@@ -49,10 +52,18 @@ param(
     [switch]$SkipRamdisk,
     [switch]$SkipConversion,
     [switch]$CreateISO,
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$BootloaderOnly
 )
 
 $ErrorActionPreference = "Stop"
+
+# If BootloaderOnly is set, skip all other steps except bootloader build and ESP copy
+if ($BootloaderOnly) {
+    $SkipKernel = $true
+    $SkipRamdisk = $true
+    $SkipConversion = $true
+}
 
 # Color output functions
 function Write-Header($text) {
@@ -82,6 +93,15 @@ $KernelProject = "$RootDir\guideXOS\guideXOS.csproj"
 $RamdiskSrc = "$RootDir\ramdisk_src"
 $ESPDir = "$RootDir\ESP"
 $ToolsDir = "$RootDir\tools"
+
+# If the bootloader project isn't at the default path, try to discover it
+if (-not (Test-Path $BootloaderProject)) {
+    $candidateBootProjects = Get-ChildItem -Path "$RootDir\guideXOSBootLoader" -Filter *.vcxproj -Recurse -ErrorAction SilentlyContinue
+    if ($candidateBootProjects -and $candidateBootProjects.Count -gt 0) {
+        $BootloaderProject = $candidateBootProjects[0].FullName
+        Write-Warning "Bootloader project not found at default path; using discovered project: $BootloaderProject"
+    }
+}
 
 Write-Header "guideXOS Build System"
 Write-Info "Root directory: $RootDir"
