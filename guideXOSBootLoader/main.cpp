@@ -763,6 +763,19 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
         }
     }
 
+    // CRITICAL: Identity-map all page table pages allocated by MapRange()
+    // Without this, the page table walk for kernel virtual addresses will
+    // fail after CR3 switch because the PT pages themselves aren't mapped!
+    {
+        EFI_STATUS st = guideXOS::paging::IdentityMapPageTablePages(
+            SystemTable,
+            pt.Pml4Phys);
+        if (EFI_ERROR(st)) {
+            Print(L"Failed to identity-map page table pages\n");
+            return st;
+        }
+    }
+
     Print(L"Page tables built at PML4: %p\n", (VOID*)(UINTN)pt.Pml4Phys);
 
     // === PRE-EXIT BOOT SERVICES VALIDATION ===
@@ -963,11 +976,10 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
     guideXOS::debug::SerialPrint("\n[BOOT] === CALLING TRAMPOLINE NOW ===\n");
 
-    // Jump to PHYSICAL address using our custom page tables that have identity mapping
-    // The kernel is NativeAOT which uses position-independent code, so it will work
-    // at the physical load address as long as all memory regions are identity-mapped.
-    // Pass our PML4 to ensure consistent page table state after handoff.
-    BootHandoffTrampoline((void*)(UINTN)entryPhys, (void*)v1BootInfo, stackTop, (void*)(UINTN)pt.Pml4Phys);
+    // Use VIRTUAL entry point. The kernel is compiled for virtual address 0x10000000.
+    // All internal calls and data references use virtual addresses.
+    // Our page tables map virtual 0x10XXXXXX -> physical 0x3DXXXXXX
+    BootHandoffTrampoline((void*)(UINTN)entryVirt, (void*)v1BootInfo, stackTop, (void*)(UINTN)pt.Pml4Phys);
 
     // If we return, halt
     guideXOS::debug::SerialPrint("\n!!! KERNEL RETURNED - THIS SHOULD NOT HAPPEN !!!\n");

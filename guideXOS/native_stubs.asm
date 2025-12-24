@@ -18,6 +18,49 @@ __modules_a:
     lea rax, [rel __Module]
     ret
 
+; === BOOT DEBUG HELPER ===
+; This is called at the VERY START of KMain to prove we entered the kernel.
+; It writes directly to serial port and framebuffer without any managed code.
+; SerialDebugMarker() - writes 'K' to COM1 (0x3F8) and magenta pixel to framebuffer
+global SerialDebugMarker
+SerialDebugMarker:
+    push rax
+    push rdx
+    
+    ; Write 'K' to COM1 (0x3F8)
+    mov dx, 0x3FD           ; Line status register
+.wait_serial:
+    in al, dx
+    test al, 0x20           ; Check THRE bit
+    jz .wait_serial
+    mov dx, 0x3F8           ; Data register
+    mov al, 'K'
+    out dx, al
+    
+    ; Write '!' to show we're still going
+    mov dx, 0x3FD
+.wait_serial2:
+    in al, dx
+    test al, 0x20
+    jz .wait_serial2
+    mov dx, 0x3F8
+    mov al, '!'
+    out dx, al
+    
+    ; Write MAGENTA pixel to framebuffer at y=50, x=0
+    ; Framebuffer = 0x80000000, y=50 with pitch 1280 = offset 50*1280*4 = 256000 = 0x3E800
+    mov rax, 0x80000000
+    add rax, 0x3E800        ; y=50, x=0
+    mov dword [rax], 0x00FF00FF     ; MAGENTA pixel
+    mov dword [rax+4], 0x00FF00FF   ; 2nd pixel
+    mov dword [rax+8], 0x00FF00FF   ; 3rd pixel
+    mov dword [rax+12], 0x00FF00FF  ; 4th pixel
+    mov dword [rax+16], 0x00FF00FF  ; 5th pixel
+    
+    pop rdx
+    pop rax
+    ret
+
 global Hlt
 Hlt:
     hlt
@@ -61,18 +104,21 @@ Invlpg:
     ret
 
 ; Port IO
-; Signatures in C#: Out8(uint port, byte value), etc.
+; Signatures in C#: Out8(ushort port, byte value), etc.
 ; Windows x64 ABI: RCX=port, RDX=value
+; IMPORTANT: Must save RDX before clobbering it with the port!
 
 global Out8
 Out8:
-    mov dx, cx
-    mov al, dl
-    out dx, al
+    ; RCX = port, RDX = value
+    mov eax, edx    ; Save value to EAX FIRST (before we clobber DX)
+    mov dx, cx      ; Now move port to DX
+    out dx, al      ; Output AL (value) to port DX
     ret
 
 global In8
 In8:
+    ; RCX = port, returns byte in AL (zero-extended to EAX)
     mov dx, cx
     xor eax, eax
     in al, dx
@@ -80,13 +126,15 @@ In8:
 
 global Out16
 Out16:
-    mov dx, cx
-    mov ax, dx
-    out dx, ax
+    ; RCX = port, RDX = value (16-bit)
+    mov eax, edx    ; Save value to EAX FIRST
+    mov dx, cx      ; Now move port to DX
+    out dx, ax      ; Output AX (value) to port DX
     ret
 
 global In16
 In16:
+    ; RCX = port, returns word in AX (zero-extended to EAX)
     mov dx, cx
     xor eax, eax
     in ax, dx
@@ -94,13 +142,15 @@ In16:
 
 global Out32
 Out32:
-    mov dx, cx
-    mov eax, edx
-    out dx, eax
+    ; RCX = port, RDX = value (32-bit)
+    mov eax, edx    ; Save value to EAX FIRST
+    mov dx, cx      ; Now move port to DX
+    out dx, eax     ; Output EAX (value) to port DX
     ret
 
 global In32
 In32:
+    ; RCX = port, returns dword in EAX
     mov dx, cx
     in eax, dx
     ret
@@ -183,23 +233,30 @@ vmware_send:
     ret
 
 ; insw/outsw stubs (PIO string ops)
+; Windows x64 ABI: RCX=port, RDX=data ptr, R8=count
 ; Insw(ushort port, ushort* data, ulong count)
 ; Outsw(ushort port, ushort* data, ulong count)
 
 global Insw
 Insw:
-    mov dx, cx
-    mov rdi, rdx
-    mov rcx, r8
+    ; RCX = port, RDX = data pointer, R8 = count
+    push rdi            ; Save RDI (callee-saved in Windows ABI)
+    mov rdi, rdx        ; RDI = data buffer (destination for insw)
+    mov rdx, rcx        ; DX = port (insw uses DX for port)
+    mov rcx, r8         ; RCX = count for rep
     rep insw
+    pop rdi             ; Restore RDI
     ret
 
 global Outsw
 Outsw:
-    mov dx, cx
-    mov rsi, rdx
-    mov rcx, r8
+    ; RCX = port, RDX = data pointer, R8 = count
+    push rsi            ; Save RSI (callee-saved in Windows ABI)
+    mov rsi, rdx        ; RSI = data buffer (source for outsw)
+    mov rdx, rcx        ; DX = port (outsw uses DX for port)
+    mov rcx, r8         ; RCX = count for rep
     rep outsw
+    pop rsi             ; Restore RSI
     ret
 
 ; misc helpers

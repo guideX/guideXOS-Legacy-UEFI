@@ -391,18 +391,11 @@ if (-not $SkipConversion) {
 
     Write-Info "Converting PE to ELF64 with KMain entry point..."
     
-    # Check if map file exists for symbol lookup
-    $conversionArgs = @($peToElf, $kernelPE, $kernelELF)
-    if (Test-Path $kernelMap) {
-        Write-Info "Using Kernel.map to find KMain symbol..."
-        # NOTE: In this repo's ILCompiler build, the map-reported address for KMain
-        # can point 2 bytes before the actual function body (landing on 0xFE 0xFF).
-        # Apply a +2 bias to start at the real prologue.
-        $conversionArgs += @("--map", $kernelMap, "--symbol", "KMain", "--entry-bias", "0x2")
-    } else {
-        Write-Warning "Kernel.map not found - using default PE entry point"
-        Write-Warning "This may cause boot issues if Entry != KMain"
-    }
+    # Use the enhanced converter with explicit entry point from PDATA analysis
+    # The PDATA section shows KMain starts at RVA 0x208B0 = VA 0x100208B0
+    # This is the REAL function start, not the symbol from the map file
+    $peToElfV2 = Join-Path $RootDir "tools\pe_to_elf_v2.py"
+    $conversionArgs = @($peToElfV2, $kernelPE, $kernelELF, "--entry", "0x100208B0")
     
     & $pythonExe @pythonExeArgs @conversionArgs
     

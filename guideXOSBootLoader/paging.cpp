@@ -107,8 +107,9 @@ namespace paging
                 }
             }
             
-            // Map as RWX (Present, Writable, Global)
-            pt[pti] = (UINT64)p | PTE_P | PTE_W | PTE_G;
+            // Map as RW executable (Present, Writable)
+            // NOTE: Removed PTE_G (Global) flag as it requires CR4.PGE to be set
+            pt[pti] = (UINT64)p | PTE_P | PTE_W;
         }
 
         return EFI_SUCCESS;
@@ -135,8 +136,8 @@ namespace paging
             const UINTN pti = (UINTN)((v >> 12) & 0x1FFull);
             UINT64* pt = PhysToPtr(ptPhys);
 
-            // Overwrite mapping to desired physical address
-            pt[pti] = (UINT64)phys | PTE_P | PTE_W | PTE_G;
+            // Overwrite mapping to desired physical address (Present, Writable)
+            pt[pti] = (UINT64)phys | PTE_P | PTE_W;
         }
 
         return EFI_SUCCESS;
@@ -177,6 +178,26 @@ namespace paging
         }
 
         out->Pml4Phys = pml4Phys;
+        return EFI_SUCCESS;
+    }
+
+    EFI_STATUS IdentityMapPageTablePages(
+        EFI_SYSTEM_TABLE* SystemTable,
+        EFI_PHYSICAL_ADDRESS pml4Phys)
+    {
+        // Identity-map all page table pages that have been allocated.
+        // This must be called after any MapRange() calls to ensure the
+        // newly allocated page table pages are themselves accessible
+        // after the CR3 switch.
+        UINTN mappedCount = 0;
+        while (mappedCount < g_ptPageCount) {
+            UINTN currentCount = g_ptPageCount;
+            for (UINTN i = mappedCount; i < currentCount; ++i) {
+                EFI_STATUS st = MapIdentityRange(SystemTable, pml4Phys, g_ptPages[i], EFI_PAGE_SIZE);
+                if (EFI_ERROR(st)) return st;
+            }
+            mappedCount = currentCount;
+        }
         return EFI_SUCCESS;
     }
 }

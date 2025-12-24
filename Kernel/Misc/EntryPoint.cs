@@ -14,6 +14,11 @@ internal static unsafe class EntryPoint {
     [DllImport("*", EntryPoint = "__modules_a")]
     private static extern IntPtr GetModulesPointer();
     
+    // Boot debug marker - writes 'K!' to serial and magenta pixel to framebuffer
+    // This is pure assembly with NO managed code overhead
+    [DllImport("*")]
+    private static extern void SerialDebugMarker();
+    
     /// <summary>
     /// NEW UEFI entry point called from UEFI bootloader
     /// This is the modern entry point that receives guideXOS::BootInfo
@@ -24,6 +29,30 @@ internal static unsafe class EntryPoint {
     /// <param name="bootInfo">UEFI boot information structure</param>
         [RuntimeExport("KMain")]
         public static void KMain(UefiBootInfo* bootInfo) {
+            // ABSOLUTE FIRST: Call native assembly marker to prove we entered KMain
+            // This is a direct call to assembly code - no managed runtime involved
+            SerialDebugMarker();
+            
+            // ABSOLUTE FIRST THING: Write directly to framebuffer to prove we're alive
+            // Use hardcoded address 0x80000000 and pitch 1280 (default QEMU)
+            // Draw 5 magenta pixels at y=50 - no loops, no function calls
+            uint* fbTest = (uint*)0x80000000;
+            // At y=50, x=0,1,2,3,4 with pitch 1280: offsets are 50*1280+0 = 64000
+            fbTest[64000] = 0x00FF00FF; // MAGENTA pixel 1
+            fbTest[64001] = 0x00FF00FF; // MAGENTA pixel 2
+            fbTest[64002] = 0x00FF00FF; // MAGENTA pixel 3
+            fbTest[64003] = 0x00FF00FF; // MAGENTA pixel 4
+            fbTest[64004] = 0x00FF00FF; // MAGENTA pixel 5
+            
+            // Try serial output WITHOUT waiting - just blast it out
+            // This tests if the issue is with In8 or the wait loop
+            Native.Out8(0x3F8, (byte)'K');
+            Native.Out8(0x3F8, (byte)'!');
+            
+            // Now do the proper wait loop
+            while ((Native.In8(0x3F8 + 5) & 0x20) == 0) { } // Wait for transmit empty
+            Native.Out8(0x3F8, (byte)'K'); // Write 'K' = KMain entered
+            
             // CRITICAL FIX: The bootloader's stack overlaps with kernel memory!
             // Stack top: 0x3D785000, Kernel start: 0x3D785000
             // This causes stack pushes to overwrite kernel code!
@@ -33,26 +62,31 @@ internal static unsafe class EntryPoint {
             // The framebuffer is at 0x80000000, we can use 0x7FF00000 for stack (16MB below)
             // But since we can't easily switch stacks in C#, let's try minimal operations
             
-            // STEP 0: ABSOLUTE FIRST INSTRUCTION - Draw using hardcoded framebuffer address
-            // This proves we entered KMain BEFORE touching ANY parameters
-            {
-                uint* fb = (uint*)0x80000000UL;
-                uint pitch = 1280;
-                // Draw BRIGHT PURPLE line at y=50
-                for (uint x = 0; x < 800; x++) {
-                    *(fb + 50 * pitch + x) = 0x00FF00FF; // PURPLE = KMain entry!
-                }
-            }
-            
             // STEP 1: Draw a visual marker IMMEDIATELY to prove we're in KMain
             // This must happen BEFORE any managed code that might throw
+            // First, write '1' to serial to show we're checking bootInfo
+            while ((Native.In8(0x3F8 + 5) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             if (bootInfo != null && bootInfo->FramebufferBase != 0) {
+                // Write 'F' to show framebuffer check passed
+                while ((Native.In8(0x3F8 + 5) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'F');
+                
                 uint* fb = (uint*)bootInfo->FramebufferBase;
                 uint pitch = bootInfo->FramebufferPitch / 4;
                 // Draw RED line at y=100 (below bootloader's colored squares)
                 for (uint x = 0; x < 400; x++) {
                     fb[100 * pitch + x] = 0x00FF0000; // RED = entered KMain
                 }
+                
+                // Write 'D' to show drawing completed
+                while ((Native.In8(0x3F8 + 5) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'D');
+            } else {
+                // Write 'N' to show bootInfo is null or no framebuffer
+                while ((Native.In8(0x3F8 + 5) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'N');
             }
             
             // STEP 2: Validate boot info magic

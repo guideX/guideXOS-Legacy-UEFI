@@ -19,12 +19,12 @@ section .text
 %macro SERIAL_CHAR 1
     push    rax
     push    rdx
-    mov     dx, 0x3FD           ; Line status register
+    mov     dx, 0x3FD
 %%wait_tx:
     in      al, dx
-    test    al, 0x20            ; TX buffer empty?
+    test    al, 0x20
     jz      %%wait_tx
-    mov     dx, 0x3F8           ; Data register
+    mov     dx, 0x3F8
     mov     al, %1
     out     dx, al
     pop     rdx
@@ -32,28 +32,30 @@ section .text
 %endmacro
 
 global BootHandoffTrampoline
-; void BootHandoffTrampoline(void* kernelEntry, void* bootInfo, void* stackTop, void* pml4Phys);
 BootHandoffTrampoline:
+    ; RCX = kernelEntry, RDX = bootInfo, R8 = stackTop, R9 = pml4Phys
     cli
     SERIAL_CHAR 'T'
 
-    ; Preserve inputs across register setup
-    mov     r12, rcx            ; kernelEntry
-    mov     r13, rdx            ; bootInfo
-    mov     r14, r8             ; stackTop
-    mov     r15, r9             ; pml4Phys
+    ; Save parameters in callee-saved registers BEFORE any modifications
+    mov     r12, rcx            ; r12 = kernelEntry (PRESERVE THIS!)
+    mov     r13, rdx            ; r13 = bootInfo
+    mov     r14, r8             ; r14 = stackTop
+    mov     r15, r9             ; r15 = pml4Phys
 
     SERIAL_CHAR '1'
 
-    ; Minimal validation
+    ; Validate parameters
     test    r12, r12
-    jz      .halt
+    jz      .panic_null_entry
     test    r13, r13
-    jz      .halt
+    jz      .panic_null_bootinfo
     test    r14, r14
-    jz      .halt
+    jz      .panic_null_stack
 
-    ; Load page tables (optional)
+    SERIAL_CHAR '2'
+
+    ; Load new page tables if provided
     test    r15, r15
     jz      .skip_cr3
     mov     rax, r15
@@ -62,34 +64,49 @@ BootHandoffTrampoline:
 
     SERIAL_CHAR '3'
 
-    ; Switch stack
+    ; Switch to new stack (must be identity-mapped in new page tables)
     mov     rsp, r14
-    and     rsp, ~0xF
+    and     rsp, ~0xF           ; 16-byte align
 
-    ; MS x64 ABI: at function entry after CALL, RSP%16==8.
-    ; We JMP (no return address push), so subtract 40 to emulate that:
-    ;  -32 shadow space
-    ;  -8  fake return address
+    ; MS x64 ABI: RSP % 16 == 8 at function entry (after CALL pushes return addr)
+    ; Since we JMP (no push), subtract 40 = 32 shadow + 8 fake return
     sub     rsp, 40
 
     SERIAL_CHAR 'S'
 
-    ; Set up kernel arguments
-    mov     rcx, r13            ; RCX = BootInfo*
+    ; Set up kernel argument: RCX = BootInfo*
+    mov     rcx, r13
 
-    ; Clear volatile regs (do NOT clobber r12)
-    xor     rax, rax
+    ; Clear other argument registers
     xor     rdx, rdx
     xor     r8,  r8
     xor     r9,  r9
+
+    ; Clear volatile registers (but NOT r12 which holds kernel entry!)
+    xor     rax, rax
     xor     r10, r10
     xor     r11, r11
 
     SERIAL_CHAR 'J'
     SERIAL_CHAR 10
 
-    ; Enter kernel
+    ; Jump to kernel - r12 still contains the entry point
     jmp     r12
+
+.panic_null_entry:
+    SERIAL_CHAR 'E'
+    SERIAL_CHAR '1'
+    jmp     .halt
+
+.panic_null_bootinfo:
+    SERIAL_CHAR 'E'
+    SERIAL_CHAR '2'
+    jmp     .halt
+
+.panic_null_stack:
+    SERIAL_CHAR 'E'
+    SERIAL_CHAR '3'
+    jmp     .halt
 
 .halt:
     SERIAL_CHAR '!'
