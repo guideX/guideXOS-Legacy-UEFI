@@ -549,30 +549,164 @@ internal static unsafe class EntryPoint {
             Native.Out8(0x3F8, (byte)'\n');
 
             // Initialize ACPI
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             if (bootInfo->AcpiRsdp != 0) {
-                Console.WriteLine($"[ACPI] RSDP at 0x{bootInfo->AcpiRsdp:X16}");
+                // Skip string interpolation - just print simple message
+                Console.WriteLine("[ACPI] RSDP address available");
             }
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
+            
             ACPI.Initialize();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'3');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
 
 #if UseAPIC
             PIC.Disable();
             LocalAPIC.Initialize();
             IOAPIC.Initialize();
 #else
+            // Debug: Before PIC.Enable
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             PIC.Enable();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
 #endif
 
-            // Initialize drivers
+            // Initialize drivers - add debug markers
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'V');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             Timer.Initialize();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'V');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
+            
             Keyboard.Initialize();
             Serial.Initialise();
             PS2Controller.Initialize();
             VMwareTools.Initialize();
             SMBIOS.Initialise();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'V');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'3');
+            
+            // Debug each driver individually
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            
             PCI.Initialise();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'+');
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'E');
+            
             IDE.Initialize();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'+');
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'T');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            
             SATA.Initialize();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'+');
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'T');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'L');
+            
             ThreadPool.Initialize();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'+');
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'V');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'4');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
 
             // Handle ramdisk
             if (bootInfo->HasRamdisk && bootInfo->RamdiskBase != 0) {
