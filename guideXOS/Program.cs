@@ -56,16 +56,66 @@ unsafe class Program {
     /// Note: This is NOT the UEFI entry point. The actual UEFI entry is in EntryPoint.cs
     /// </summary>
     public static void KMain() {
+        // Serial debug: Entering KMain
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'[');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'K');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'M');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)']');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'\r');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'\n');
+        
         Animator.Initialize();
 
         // Initialize legacy PS/2 input first so VirtualBox (default PS/2 devices) works out-of-the-box.
         // This provides keyboard IRQ1 (0x21) and mouse IRQ12 (0x2C) handling even without USB HID.
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'p');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'s');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'2');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'1');
+        
         try { PS2Keyboard.Initialize(); } catch { }
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'p');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'s');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'2');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'2');
+        
         try { PS2Mouse.Initialise(); } catch { }
+        
         // Initialize VMware absolute pointer backdoor if present (no-op on other hypervisors)
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'v');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'m');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'1');
+        
         try { VMwareTools.Initialize(); } catch { }
 
 #if USBDebug
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'u');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'s');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'b');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'1');
+        
         Hub.Initialize();
         HID.Initialize();
         EHCI.Initialize();
@@ -104,12 +154,30 @@ unsafe class Program {
             }
         }
 #else
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'u');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'s');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'b');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'2');
+        
         try {
             Hub.Initialize();
             HID.Initialize();
             EHCI.Initialize();
             USB.StartPolling();
         } catch { /* USB stack is optional; continue boot */ }
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'u');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'s');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'b');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'3');
 
         try {
             /*
@@ -124,23 +192,141 @@ unsafe class Program {
 #endif
 
         //Sized width to 512
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'i');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'m');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'g');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'1');
+        
         try { Cursor = new PNG(File.ReadAllBytes("Images/Cursor.png")); } catch { Cursor = new Image(16,16); }
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'i');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'m');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'g');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'2');
+        
         try { CursorMoving = new PNG(File.ReadAllBytes("Images/Grab.png")); } catch { CursorMoving = Cursor; }
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'i');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'m');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'g');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'3');
+        
         try { CursorBusy = new PNG(File.ReadAllBytes("Images/Busy.png")); } catch { CursorBusy = Cursor; }
         //try { Wallpaper = new PNG(File.ReadAllBytes("Images/tronporche.png")); } catch { Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height); }
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'f');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'n');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'t');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'1');
+        
         BitFont.Initialize();
         // FIXED: Added leading space to charset to match font image layout
         string CustomCharset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'f');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'n');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'t');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'2');
+        
         BitFont.RegisterBitFont(new BitFontDescriptor("Enludo", CustomCharset, File.ReadAllBytes("Fonts/enludo.btf"), 16));
         //Terminal = null;
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'g');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'u');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'i');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'1');
+        
         WindowManager.Initialize();
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'g');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'u');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'i');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'2');
+        
         Desktop.Initialize();
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'n');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'e');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'t');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'1');
+        
         Firewall.Initialize();
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'s');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'n');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'d');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'1');
+        
         Audio.Initialize();
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'s');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'n');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'d');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'2');
+        
         AC97.Initialize();
         if (AC97.DeviceLocated) Console.WriteLine("Device Located: " + AC97.DeviceName);
+        
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'s');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'n');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'d');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'3');
+        
         ES1371.Initialize();
 #if NETWORK
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'n');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'e');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'t');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'2');
+        
         Console.WriteLine("[NET] Initializing network subsystem...");
         try {
             NETv4.Initialize();
@@ -162,11 +348,42 @@ unsafe class Program {
 #endif
 
         // Apply saved display mode before wallpaper resize
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'d');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'s');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'p');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'1');
+        
         DisplayManager.ApplySavedResolution();
 
         // Load saved configuration (UI settings, window positions, recent files, etc.)
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'c');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'f');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'g');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'1');
+        
         guideXOS.OS.Configuration.LoadConfiguration();
 
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'[');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'S');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'M');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)']');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'\r');
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'\n');
+        
         SMain();
     }
 
