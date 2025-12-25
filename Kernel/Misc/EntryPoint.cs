@@ -483,19 +483,70 @@ internal static unsafe class EntryPoint {
             
             DetectArchitecture();
 
+            // Debug: After DetectArchitecture, before GDT/IDT
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'G');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+
             // Initialize GDT/IDT
             IDT.Disable();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'G');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
+            
             GDT.Initialise();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'G');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'3');
+            
             {
                 const ulong kStackSize = 64 * 1024;
                 ulong rsp0 = (ulong)Allocator.Allocate(kStackSize) + kStackSize;
                 GDT.SetKernelStack(rsp0);
             }
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'G');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'4');
+            
             IDT.Initialize();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'G');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'5');
+            
             IDT.AllowUserSoftwareInterrupt(0x80);
             Interrupts.Initialize();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'G');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'6');
+            
             IDT.Enable();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'G');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'7');
+            
             SSE.enable_sse();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'G');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'8');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
 
             // Initialize ACPI
             if (bootInfo->AcpiRsdp != 0) {
@@ -671,42 +722,64 @@ internal static unsafe class EntryPoint {
         /// Detect and validate system architecture
         /// </summary>
         private static void DetectArchitecture() {
+            // Debug: entering DetectArchitecture
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             Console.WriteLine("=== Architecture Detection ===");
             
-            // 1. Pointer size check
+            // Debug: after first line
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
+            
+            // 1. Pointer size check - use simple strings instead of interpolation
             int ptrSize = sizeof(nint);
-            Console.WriteLine($"[ARCH] Pointer Size: {ptrSize} bytes ({(ptrSize == 8 ? "64-bit" : ptrSize == 4 ? "32-bit" : "Unknown")})");
-
-            // 2. CPUID support check - COMMENTED OUT: Native cpuid functions not yet implemented
-            // When you implement cpuid.cpp and link it, uncomment this section:
-            /*
-            if (CPUIDHelper.IsCPUIDSupported()) {
-                Console.WriteLine("[ARCH] CPUID: Supported");
-                
-                // Print CPU info
-                CPUIDHelper.PrintCPUInfo();
-                
-                // Check for Long Mode (AMD64/x86-64)
-                if (CPUIDHelper.GetMaxLeaf() >= 0x80000001) {
-                    bool probablyLongMode = (ptrSize == 8);
-                    Console.WriteLine($"[ARCH] Long Mode (64-bit): {(probablyLongMode ? "YES" : "NO")}");
-                }
-            } else {
-                Console.WriteLine("[ARCH] CPUID: Not supported");
-            }
-            */
-
-            // Simplified detection based on pointer size
             if (ptrSize == 8) {
+                Console.WriteLine("[ARCH] Pointer Size: 8 bytes (64-bit)");
                 Console.WriteLine("[ARCH] Running in 64-bit mode (AMD64)");
             } else if (ptrSize == 4) {
+                Console.WriteLine("[ARCH] Pointer Size: 4 bytes (32-bit)");
                 Console.WriteLine("[ARCH] Running in 32-bit mode");
+            } else {
+                Console.WriteLine("[ARCH] Pointer Size: Unknown");
             }
+            
+            // Debug: after pointer check
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'3');
 
             // 3. Test pointer arithmetic integrity
             TestPointerIntegrity();
+            
+            // Debug: after pointer integrity
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'4');
 
             Console.WriteLine("=== Architecture Detection Complete ===");
+            
+            // Debug: done
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'5');
         }
 
         /// <summary>
@@ -722,7 +795,9 @@ internal static unsafe class EntryPoint {
                 if (recovered == testValue) {
                     Console.WriteLine("[ARCH] Pointer integrity: PASS (64-bit pointers working)");
                 } else {
-                    Panic.Error($"Pointer truncation detected! Expected 0x{testValue:X16}, got 0x{recovered:X16}");
+                    // Avoid string interpolation in Panic - just use simple message
+                    Console.WriteLine("[ARCH] ERROR: Pointer truncation detected!");
+                    Panic.Error("Pointer truncation detected!");
                 }
             } else {
                 Console.WriteLine("[ARCH] Pointer integrity: SKIP (32-bit mode)");
