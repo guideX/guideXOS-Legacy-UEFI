@@ -360,8 +360,654 @@ BootHandoffTrampoline:
     ; Restore kernel entry
     pop r12
     
-    ; Now do the actual jump
+    ; === FINAL TEST: Use CALL instead of JMP ===
+    ; If the kernel hangs immediately, the return address won't matter.
+    ; But if it does something and crashes, we might see output.
+    ; Also, let's write a marker RIGHT BEFORE the jump.
+    
+    ; Print '*' right before jumping
+    mov dx, 03F8h
+.wait_star:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_star
+    sub dx, 5
+    mov al, '*'
+    out dx, al
+    
+    ; === FINAL STACK TEST ===
+    ; Test that we can push/pop on the current stack
+    ; If this works, the stack is accessible
+    push rax                    ; Test push
+    pop rax                     ; Test pop
+    
+    ; Write '+' to show stack push/pop worked
+    mov dx, 03F8h
+.wait_plus:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_plus
+    sub dx, 5
+    mov al, '+'
+    out dx, al
+    
+    ; === DIRECT INSTRUCTION TEST ===
+    ; Try to execute the first instruction of the kernel manually
+    ; The kernel prologue starts with: 55 = push rbp
+    ; Let's simulate this to see if it works
+    push rbp                    ; Same as kernel's first instruction
+    
+    ; Write 'B' to show push rbp worked
+    mov dx, 03F8h
+.wait_B:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_B
+    sub dx, 5
+    mov al, 'B'
+    out dx, al
+    
+    pop rbp                     ; Restore rbp
+    
+    ; === PRINT RSP VALUE ===
+    ; Print current RSP to see if it's valid
+    mov r10, rsp
+    mov r11d, 16
+.print_rsp:
+    rol r10, 4
+    mov al, r10b
+    and al, 0Fh
+    add al, '0'
+    cmp al, '9'
+    jbe .rsp_digit_ok
+    add al, 7
+.rsp_digit_ok:
+    mov dx, 03FDh
+.wait_rsp:
+    push rax
+    in al, dx
+    test al, 20h
+    pop rax
+    jz .wait_rsp
+    mov dx, 03F8h
+    out dx, al
+    dec r11d
+    jnz .print_rsp
+    
+    ; Newline
+    mov dx, 03FDh
+.wait_rsp_nl:
+    in al, dx
+    test al, 20h
+    jz .wait_rsp_nl
+    mov dx, 03F8h
+    mov al, 0Dh
+    out dx, al
+.wait_rsp_nl2:
+    mov dx, 03FDh
+    in al, dx
+    test al, 20h
+    jz .wait_rsp_nl2
+    mov dx, 03F8h
+    mov al, 0Ah
+    out dx, al
+    
+    ; === WRITE MARKER TO FRAMEBUFFER AT y=60 ===
+    ; This will be visible even if serial fails
+    mov rax, 0x80000000
+    add rax, 0x4B000            ; y=60, offset = 60*1280*4 = 307200 = 0x4B000
+    mov dword [rax], 0x00FF0000     ; RED pixel before call
+    mov dword [rax+4], 0x00FF0000
+    mov dword [rax+8], 0x00FF0000
+    mov dword [rax+12], 0x00FF0000
+    mov dword [rax+16], 0x00FF0000
+    
+    ; Write '!' to show we're about to call
+    mov dx, 03F8h
+.wait_exclaim:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_exclaim
+    sub dx, 5
+    mov al, '!'
+    out dx, al
+    
+    ; === CHECK CR4 FOR SMEP/SMAP ===
+    ; SMEP (bit 20) prevents supervisor from executing user-mode pages
+    ; SMAP (bit 21) prevents supervisor from accessing user-mode pages
+    mov rax, cr4
+    mov r10, rax
+    
+    ; Print 'C' then CR4 value
+    mov dx, 03F8h
+.wait_C4:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_C4
+    sub dx, 5
+    mov al, 'C'
+    out dx, al
+    
+    ; Print CR4 as 8 hex digits
+    mov r11d, 8
+.print_cr4:
+    rol r10d, 4
+    mov al, r10b
+    and al, 0Fh
+    add al, '0'
+    cmp al, '9'
+    jbe .cr4_digit_ok
+    add al, 7
+.cr4_digit_ok:
+    mov dx, 03FDh
+.wait_cr4:
+    push rax
+    in al, dx
+    test al, 20h
+    pop rax
+    jz .wait_cr4
+    mov dx, 03F8h
+    out dx, al
+    dec r11d
+    jnz .print_cr4
+    
+    ; Newline
+    mov dx, 03FDh
+.wait_cr4_nl:
+    in al, dx
+    test al, 20h
+    jz .wait_cr4_nl
+    mov dx, 03F8h
+    mov al, 0Dh
+    out dx, al
+.wait_cr4_nl2:
+    mov dx, 03FDh
+    in al, dx
+    test al, 20h
+    jz .wait_cr4_nl2
+    mov dx, 03F8h
+    mov al, 0Ah
+    out dx, al
+    
+    ; === CHECK IF PAGE IS USER-MODE (bit 2 of PTE) ===
+    ; If PTE has U bit set AND CR4.SMEP is set, execution will fail
+    ; Our PTE was 0x023 = Present | RW | Accessed, NO User bit
+    ; So this shouldn't be the issue, but let's verify
+    
+    ; === TRY DISABLING SMEP/SMAP BEFORE CALL ===
+    ; Clear bits 20 and 21 of CR4
+    mov rax, cr4
+    and rax, ~((1 << 20) | (1 << 21))  ; Clear SMEP and SMAP
+    mov cr4, rax
+    
+    ; Write 'D' to show SMEP/SMAP disabled
+    mov dx, 03F8h
+.wait_D:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_D
+    sub dx, 5
+    mov al, 'D'
+    out dx, al
+    
+    ; === TRY A DIFFERENT APPROACH: JMP INSTEAD OF CALL ===
+    ; Maybe the issue is with the CALL instruction specifically
+    ; Let's try: push return_addr, then jmp r12
+    ; First write '@' marker
+    mov dx, 03F8h
+.wait_at:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_at
+    sub dx, 5
+    mov al, '@'
+    out dx, al
+    
+    ; === FLUSH CACHES AND SERIALIZE ===
+    ; The kernel was loaded by the bootloader, but the instruction cache
+    ; might have stale data. Use wbinvd to write-back and invalidate caches.
+    wbinvd
+    
+    ; Serialize the processor to ensure all previous instructions complete
+    ; and instruction fetch uses fresh cache state
+    ; Use cpuid as a serializing instruction (it's always available)
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    xor eax, eax
+    cpuid
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    
+    ; Write 'W' to show cache flush done
+    mov dx, 03F8h
+.wait_W:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_W
+    sub dx, 5
+    mov al, 'W'
+    out dx, al
+    
+    ; === TRY EXECUTING FIRST FEW INSTRUCTIONS INLINE ===
+    ; Instead of jumping, let's manually execute what the kernel prologue does
+    ; Prologue: 55 41 57 41 56 41 55 41 54 57 56 53 48 83 EC 48
+    ; = push rbp; push r15; push r14; push r13; push r12; push rdi; push rsi; push rbx; sub rsp, 0x48
+    
+    ; Write 'I' to show we're doing inline test
+    mov dx, 03F8h
+.wait_I:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_I
+    sub dx, 5
+    mov al, 'I'
+    out dx, al
+    
+    ; Execute the exact same instructions as the kernel prologue
+    push rbp                    ; 55
+    push r15                    ; 41 57
+    push r14                    ; 41 56
+    push r13                    ; 41 55
+    push r12                    ; 41 54
+    push rdi                    ; 57
+    push rsi                    ; 56
+    push rbx                    ; 53
+    sub rsp, 0x48               ; 48 83 EC 48
+    
+    ; Write 'Y' to show inline prologue succeeded!
+    mov dx, 03F8h
+.wait_Y:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_Y
+    sub dx, 5
+    mov al, 'Y'
+    out dx, al
+    
+    ; Undo the prologue
+    add rsp, 0x48
+    pop rbx
+    pop rsi
+    pop rdi
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+    pop rbp
+    
+    ; Write 'Z' to show cleanup succeeded
+    mov dx, 03F8h
+.wait_Z:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_Z
+    sub dx, 5
+    mov al, 'Z'
+    out dx, al
+    
+    ; Restore RCX = bootInfo for kernel (we clobbered it during page table walk)
+    mov rcx, r13
+    
+    ; === FINAL ATTEMPT: Direct jump ===
+    ; Write '>' to show we're doing final jump
+    mov dx, 03F8h
+.wait_gt:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_gt
+    sub dx, 5
+    mov al, '>'
+    out dx, al
+    
+    ; === CHECK CODE SEGMENT ===
+    ; Print CS register to verify we're in a valid code segment
+    xor rax, rax
+    mov ax, cs
+    mov r10, rax
+    
+    ; Print 'S' then CS value (4 hex digits)
+    mov dx, 03F8h
+.wait_S2:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_S2
+    sub dx, 5
+    mov al, 'S'
+    out dx, al
+    
+    mov r11d, 4
+.print_cs:
+    rol r10w, 4
+    mov al, r10b
+    and al, 0Fh
+    add al, '0'
+    cmp al, '9'
+    jbe .cs_digit_ok
+    add al, 7
+.cs_digit_ok:
+    mov dx, 03FDh
+.wait_cs:
+    push rax
+    in al, dx
+    test al, 20h
+    pop rax
+    jz .wait_cs
+    mov dx, 03F8h
+    out dx, al
+    dec r11d
+    jnz .print_cs
+    
+    ; === VERIFY TARGET ADDRESS ONE MORE TIME ===
+    ; Print the actual r12 value we're about to jump to
+    mov dx, 03F8h
+.wait_T2:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_T2
+    sub dx, 5
+    mov al, 'T'
+    out dx, al
+    
+    mov r10, r12
+    mov r11d, 16
+.print_target:
+    rol r10, 4
+    mov al, r10b
+    and al, 0Fh
+    add al, '0'
+    cmp al, '9'
+    jbe .target_digit_ok
+    add al, 7
+.target_digit_ok:
+    mov dx, 03FDh
+.wait_target:
+    push rax
+    in al, dx
+    test al, 20h
+    pop rax
+    jz .wait_target
+    mov dx, 03F8h
+    out dx, al
+    dec r11d
+    jnz .print_target
+    
+    ; Newline
+    mov dx, 03FDh
+.wait_target_nl:
+    in al, dx
+    test al, 20h
+    jz .wait_target_nl
+    mov dx, 03F8h
+    mov al, 0Dh
+    out dx, al
+.wait_target_nl2:
+    mov dx, 03FDh
+    in al, dx
+    test al, 20h
+    jz .wait_target_nl2
+    mov dx, 03F8h
+    mov al, 0Ah
+    out dx, al
+    
+    ; === WRITE GREEN PIXELS AT y=65 BEFORE JUMP ===
+    mov rax, 0x80000000
+    add rax, 0x50000            ; y=65, offset = 65*1280*4 = 332800 = 0x51400... let me recalc
+    ; y=65: 65*1280*4 = 332800 = 0x51400
+    mov rax, 0x80000000
+    add rax, 0x51400
+    mov dword [rax], 0x0000FF00     ; GREEN pixel
+    mov dword [rax+4], 0x0000FF00
+    mov dword [rax+8], 0x0000FF00
+    mov dword [rax+12], 0x0000FF00
+    mov dword [rax+16], 0x0000FF00
+    
+    ; Write '!' right before final jump
+    mov dx, 03F8h
+.wait_final:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_final
+    sub dx, 5
+    mov al, '!'
+    out dx, al
+    
+    ; === ATTEMPT: Copy first few kernel instructions and execute them here ===
+    ; This will tell us if there's something wrong with the actual bytes
+    ; Read 32 bytes from kernel entry and print them
+    mov rsi, r12                ; Source = kernel entry
+    
+    ; Print 'K' then first 8 bytes of kernel code
+    mov dx, 03F8h
+.wait_K:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_K
+    sub dx, 5
+    mov al, 'K'
+    out dx, al
+    
+    ; Read first 8 bytes
+    mov rax, [rsi]              ; First 8 bytes of kernel
+    mov r10, rax
+    mov r11d, 16
+.print_k8:
+    rol r10, 4
+    mov al, r10b
+    and al, 0Fh
+    add al, '0'
+    cmp al, '9'
+    jbe .k8_digit_ok
+    add al, 7
+.k8_digit_ok:
+    mov dx, 03FDh
+.wait_k8:
+    push rax
+    in al, dx
+    test al, 20h
+    pop rax
+    jz .wait_k8
+    mov dx, 03F8h
+    out dx, al
+    dec r11d
+    jnz .print_k8
+    
+    ; Newline
+    mov dx, 03FDh
+.wait_k8_nl:
+    in al, dx
+    test al, 20h
+    jz .wait_k8_nl
+    mov dx, 03F8h
+    mov al, 0Dh
+    out dx, al
+.wait_k8_nl2:
+    mov dx, 03FDh
+    in al, dx
+    test al, 20h
+    jz .wait_k8_nl2
+    mov dx, 03F8h
+    mov al, 0Ah
+    out dx, al
+    
+    ; === TRY COPYING CODE AND EXECUTING IT ===
+    ; Copy first 32 bytes of kernel to stack and execute there
+    ; This tests if the problem is the location or the code itself
+    
+    ; Allocate 64 bytes on stack for code copy
+    sub rsp, 64
+    
+    ; Copy 32 bytes from kernel entry to stack
+    mov rsi, r12                ; Source = kernel entry (virtual address)
+    mov rdi, rsp                ; Dest = stack
+    mov rcx, 32
+.copy_loop:
+    mov al, [rsi]
+    mov [rdi], al
+    inc rsi
+    inc rdi
+    dec rcx
+    jnz .copy_loop
+    
+    ; Write 'X' to show copy done
+    mov dx, 03F8h
+.wait_X:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_X
+    sub dx, 5
+    mov al, 'X'
+    out dx, al
+    
+    ; DON'T execute copied code - it won't work because of RIP-relative addressing
+    ; Just restore stack
+    add rsp, 64
+    
+    ; === FINAL: Try the actual jump ===
+    ; Write '#' right before the jump
+    mov dx, 03F8h
+.wait_hash:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_hash
+    sub dx, 5
+    mov al, '#'
+    out dx, al
+    
+    ; Write newline
+    mov dx, 03FDh
+.wait_hash_nl:
+    in al, dx
+    test al, 20h
+    jz .wait_hash_nl
+    mov dx, 03F8h
+    mov al, 0Dh
+    out dx, al
+.wait_hash_nl2:
+    mov dx, 03FDh
+    in al, dx
+    test al, 20h
+    jz .wait_hash_nl2
+    mov dx, 03F8h
+    mov al, 0Ah
+    out dx, al
+    
+    ; === EXECUTE KERNEL'S FIRST INSTRUCTIONS DIRECTLY ===
+    ; Instead of jumping, execute the prologue + first instruction here
+    ; The prologue is: push rbp; push r15; push r14; push r13; push r12; push rdi; push rsi; push rbx; sub rsp, 0x48
+    ; = bytes: 55 41 57 41 56 41 55 41 54 57 56 53 48 83 EC 48
+    ; After prologue, the code does: mov rcx, 0x80000000 (or loads from data section)
+    
+    ; Execute the prologue
+    push rbp
+    push r15
+    push r14
+    push r13
+    push r12
+    push rdi
+    push rsi
+    push rbx
+    sub rsp, 0x48
+    
+    ; Write 'P' to show prologue executed in trampoline
+    mov dx, 03F8h
+.wait_P2:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_P2
+    sub dx, 5
+    mov al, 'P'
+    out dx, al
+    
+    ; Now we're in the same stack state as after the kernel's prologue
+    ; The next instructions in the kernel would try to execute Native.Out8(0x3F8, 'K')
+    ; Let's do that here
+    mov dx, 0x3F8
+    mov al, 'K'
+    out dx, al
+    
+    ; Write '!' 
+    mov al, '!'
+    out dx, al
+    
+    ; Write 'O' to show we did kernel-like output
+    mov dx, 03F8h
+.wait_O:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_O
+    sub dx, 5
+    mov al, 'O'
+    out dx, al
+    
+    ; === NOW TRY TO JUMP TO KERNEL ===
+    ; But first, undo our prologue
+    add rsp, 0x48
+    pop rbx
+    pop rsi
+    pop rdi
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+    pop rbp
+    
+    ; Restore RCX with bootInfo
+    mov rcx, r13
+    
+    ; Write '^' before final jump
+    mov dx, 03F8h
+.wait_caret:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_caret
+    sub dx, 5
+    mov al, '^'
+    out dx, al
+    
+    ; Push a fake return address (we'll halt anyway if kernel returns)
+    lea rax, [rel .kernel_returned]
+    push rax
+    
+    ; JMP to kernel instead of CALL
     jmp r12
+    
+.kernel_returned:
+    ; If we get here, kernel returned (shouldn't happen)
+    mov dx, 03F8h
+.wait_ret:
+    add dx, 5
+    in al, dx
+    test al, 20h
+    jz .wait_ret
+    sub dx, 5
+    mov al, 'X'         ; 'X' = kernel returned
+    out dx, al
+    jmp .hang
 
     ; --- Breadcrumb: '?' = Jump didn't work (should never reach here) ---
     mov dx, 03F8h
@@ -377,11 +1023,11 @@ BootHandoffTrampoline:
     ; === PANIC: Should never reach here ===
 .hang:
     mov dx, 03F8h
-.wait_X:
+.wait_hang:
     add dx, 5
     in al, dx
     test al, 20h
-    jz .wait_X
+    jz .wait_hang
     sub dx, 5
     mov al, '!'
     out dx, al

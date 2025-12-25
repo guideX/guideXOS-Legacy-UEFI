@@ -19,9 +19,10 @@
 		<DefineConstants>Kernel;UseAPIC;NETWORK;X64</DefineConstants>
 
 		<IlcSystemModule>guideXOS</IlcSystemModule>
-		<!-- CRITICAL: For UEFI boot, the entry point is KMain (not Entry) -->
-		<!-- Entry is used for legacy GRUB2/multiboot boot -->
-		<EntryPointSymbol>KMain</EntryPointSymbol>
+		<!-- CRITICAL: For UEFI boot, use KMainWrapper as the entry point -->
+		<!-- KMainWrapper is defined in native_stubs.asm and provides early debugging -->
+		<!-- before calling into managed KMain code -->
+		<EntryPointSymbol>KMainWrapper</EntryPointSymbol>
 		<LinkerSubsystem>NATIVE</LinkerSubsystem>
 		<!--Make the code faster!-->
 		<IlcOptimizationPreference>Size</IlcOptimizationPreference>
@@ -70,6 +71,8 @@
 	<ItemGroup>
 		<LinkerArg Include="/fixed /base:0x10000000 /map:Kernel.map" />
 		<LinkerArg Include="/FORCE:UNRESOLVED" />
+		<!-- Force include KMainWrapper from native_stubs.obj so it's not stripped -->
+		<LinkerArg Include="/INCLUDE:KMainWrapper" />
 	</ItemGroup>
 
 	<!--Warning: This package is modified(/packages). Using official one may cause it fail to compile!-->

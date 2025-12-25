@@ -19,6 +19,21 @@ internal static unsafe class EntryPoint {
     [DllImport("*")]
     private static extern void SerialDebugMarker();
     
+    // IMPORTANT: This forces KMainWrapper to be included in the final executable
+    // KMainWrapper is the REAL entry point that should be called by the bootloader
+    // It writes debug markers before calling KMain
+    [DllImport("*")]
+    private static extern void KMainWrapper(UefiBootInfo* bootInfo);
+    
+    // Static field to hold KMainWrapper address - this forces linker to include it
+    private static IntPtr _kMainWrapperAddr;
+    
+    // Helper to force KMainWrapper inclusion - MUST be called from reachable code
+    private static void ForceIncludeKMainWrapper() {
+        // Take address of KMainWrapper to force linker to include it
+        _kMainWrapperAddr = (IntPtr)(delegate*<UefiBootInfo*, void>)&KMainWrapper;
+    }
+    
     /// <summary>
     /// NEW UEFI entry point called from UEFI bootloader
     /// This is the modern entry point that receives guideXOS::BootInfo
@@ -29,168 +44,315 @@ internal static unsafe class EntryPoint {
     /// <param name="bootInfo">UEFI boot information structure</param>
         [RuntimeExport("KMain")]
         public static void KMain(UefiBootInfo* bootInfo) {
-            // ABSOLUTE FIRST: Call native assembly marker to prove we entered KMain
-            // This is a direct call to assembly code - no managed runtime involved
-            SerialDebugMarker();
+            // Force linker to include KMainWrapper (even though we don't use it here)
+            // ForceIncludeKMainWrapper(); // DISABLED - not needed anymore
             
-            // ABSOLUTE FIRST THING: Write directly to framebuffer to prove we're alive
-            // Use hardcoded address 0x80000000 and pitch 1280 (default QEMU)
-            // Draw 5 magenta pixels at y=50 - no loops, no function calls
-            uint* fbTest = (uint*)0x80000000;
-            // At y=50, x=0,1,2,3,4 with pitch 1280: offsets are 50*1280+0 = 64000
-            fbTest[64000] = 0x00FF00FF; // MAGENTA pixel 1
-            fbTest[64001] = 0x00FF00FF; // MAGENTA pixel 2
-            fbTest[64002] = 0x00FF00FF; // MAGENTA pixel 3
-            fbTest[64003] = 0x00FF00FF; // MAGENTA pixel 4
-            fbTest[64004] = 0x00FF00FF; // MAGENTA pixel 5
-            
-            // Try serial output WITHOUT waiting - just blast it out
-            // This tests if the issue is with In8 or the wait loop
+            // === PHASE 0: IMMEDIATE SERIAL DEBUG ===
+            // Write serial markers to track execution progress
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'M');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'N');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'!');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
             
-            // Now do the proper wait loop
-            while ((Native.In8(0x3F8 + 5) & 0x20) == 0) { } // Wait for transmit empty
-            Native.Out8(0x3F8, (byte)'K'); // Write 'K' = KMain entered
+            // === PHASE 0.1: FRAMEBUFFER TEST ===
+            // Write '[FB]' to serial before framebuffer access
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'F');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'B');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
             
-            // CRITICAL FIX: The bootloader's stack overlaps with kernel memory!
-            // Stack top: 0x3D785000, Kernel start: 0x3D785000
-            // This causes stack pushes to overwrite kernel code!
-            // 
-            // WORKAROUND: Switch to a safe stack region immediately
-            // We'll use a region in the framebuffer's vicinity that's mapped
-            // The framebuffer is at 0x80000000, we can use 0x7FF00000 for stack (16MB below)
-            // But since we can't easily switch stacks in C#, let's try minimal operations
+            // Write directly to framebuffer using raw pointer
+            // Framebuffer is identity-mapped at 0x80000000
+            uint* fb0 = (uint*)0x80000000;
             
-            // STEP 1: Draw a visual marker IMMEDIATELY to prove we're in KMain
-            // This must happen BEFORE any managed code that might throw
-            // First, write '1' to serial to show we're checking bootInfo
-            while ((Native.In8(0x3F8 + 5) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'1');
+            // Write WHITE pixels at (0,0)
+            fb0[0] = 0x00FFFFFF;
+            fb0[1] = 0x00FFFFFF;
+            fb0[2] = 0x00FFFFFF;
+            fb0[3] = 0x00FFFFFF;
+            fb0[4] = 0x00FFFFFF;
             
-            if (bootInfo != null && bootInfo->FramebufferBase != 0) {
-                // Write 'F' to show framebuffer check passed
-                while ((Native.In8(0x3F8 + 5) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'F');
-                
-                uint* fb = (uint*)bootInfo->FramebufferBase;
-                uint pitch = bootInfo->FramebufferPitch / 4;
-                // Draw RED line at y=100 (below bootloader's colored squares)
-                for (uint x = 0; x < 400; x++) {
-                    fb[100 * pitch + x] = 0x00FF0000; // RED = entered KMain
-                }
-                
-                // Write 'D' to show drawing completed
-                while ((Native.In8(0x3F8 + 5) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'D');
-            } else {
-                // Write 'N' to show bootInfo is null or no framebuffer
-                while ((Native.In8(0x3F8 + 5) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'N');
+            // Confirm framebuffer write
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            // === PHASE 1: VALIDATE BOOT INFO ===
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'B');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
+            
+            if (bootInfo == null || bootInfo->FramebufferBase == 0) {
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'E');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'R');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'R');
+                for (; ; ) { Native.Hlt(); }
             }
             
-            // STEP 2: Validate boot info magic
-            if (bootInfo == null || bootInfo->Magic != 0x49425847) { // 'GXBI'
-                // Invalid boot info - draw blue error line and halt
-                if (bootInfo != null && bootInfo->FramebufferBase != 0) {
-                    uint* fb = (uint*)bootInfo->FramebufferBase;
-                    uint pitch = bootInfo->FramebufferPitch / 4;
-                    for (uint x = 0; x < 400; x++) {
-                        fb[110 * pitch + x] = 0x000000FF; // BLUE = bad magic
-                    }
-                }
-                for (; ; ) Native.Hlt();
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            // === PHASE 2: DRAW BOOT MARKER ===
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
+            
+            uint* fb = (uint*)bootInfo->FramebufferBase;
+            uint pitch = bootInfo->FramebufferPitch / 4;
+            
+            // Draw magenta line at y=100
+            for (uint x = 0; x < 200; x++) {
+                fb[100 * pitch + x] = 0x00FF00FF;
             }
             
-            // STEP 3: Initialize allocator FIRST (before any allocations)
-            // Draw yellow line to show we're initializing allocator
-            if (bootInfo->FramebufferBase != 0) {
-                uint* fb = (uint*)bootInfo->FramebufferBase;
-                uint pitch = bootInfo->FramebufferPitch / 4;
-                for (uint x = 0; x < 400; x++) {
-                    fb[120 * pitch + x] = 0x00FFFF00; // YELLOW = allocator init
-                }
-            }
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
             
-            // CRITICAL: The allocator base MUST be in a memory region that is mapped
-            // The bootloader maps the kernel at physical addresses starting around 0x3D785000
-            // We'll use a region after the kernel for allocations
-            // For UEFI boot, use the end of kernel region (kernel is loaded at ~0x3D785000)
-            // Calculate allocator base relative to kernel's physical location
-            // A safe bet is to use 0x40000000 which should be in mapped conventional memory
-            // Or even better, use a region starting after where the kernel ends
-            // The kernel is loaded at ~0x3D785000 with size ~0x41C600 bytes
-            // So it ends around 0x3DBA1600 - we'll start allocator at 0x3DC00000 (aligned)
-            // Actually, let's use a fixed address that we know the bootloader maps: the framebuffer region!
-            // No wait - framebuffer is MMIO and can't be used for allocations
+            // === PHASE 3: INITIALIZE ALLOCATOR ===
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'L');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
             
-            // SAFEST approach: Use memory starting after a large offset from kernel load base
-            // The kernel mapping should extend far enough if the bootloader maps sufficient pages
-            // Let's try 0x4000000 (64MB from start) - this should be within the first 1GB identity mapping
             Allocator.Initialize((IntPtr)0x4000000);
             
-            // STEP 4: Draw green line after allocator succeeds
-            if (bootInfo->FramebufferBase != 0) {
-                uint* fb = (uint*)bootInfo->FramebufferBase;
-                uint pitch = bootInfo->FramebufferPitch / 4;
-                for (uint x = 0; x < 400; x++) {
-                    fb[130 * pitch + x] = 0x0000FF00; // GREEN = allocator OK
-                }
+            // Draw green line
+            for (uint x = 0; x < 200; x++) {
+                fb[110 * pitch + x] = 0x0000FF00;
             }
             
-            // STEP 5: Initialize modules (required for NativeAOT runtime)
-            // CRITICAL: Must get the actual module pointer from the native assembly stub
-            // The __modules_a native function returns the address of the __Module symbol
-            // which contains the NativeAOT module table.
-            // This call works because it's a direct native call, not a managed P/Invoke
-            IntPtr modulesPtr = GetModulesPointer();
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
             
-            // Draw a marker to show we got the modules pointer
-            if (bootInfo->FramebufferBase != 0) {
-                uint* fb = (uint*)bootInfo->FramebufferBase;
-                uint pitch = bootInfo->FramebufferPitch / 4;
-                // Draw WHITE line at y=125 to show modules pointer retrieved
-                for (uint x = 0; x < 400; x++) {
-                    fb[125 * pitch + x] = 0x00FFFFFF; // WHITE = got modules ptr
-                }
+            // === PHASE 4: INITIALIZE MODULES ===
+            // TEMPORARILY DISABLED: Module initialization may access unmapped memory
+            // The NativeAOT runtime's InitializeModules walks internal data structures
+            // that may have pointers to regions not mapped by the bootloader.
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'M');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            // SKIP module init for now - kernel basic features should still work
+            // IntPtr modulesPtr = GetModulesPointer();
+            // StartupCodeHelpers.InitializeModules(modulesPtr);
+            
+            // Draw cyan line
+            for (uint x = 0; x < 200; x++) {
+                fb[120 * pitch + x] = 0x0000FFFF;
             }
             
-            StartupCodeHelpers.InitializeModules(modulesPtr);
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
             
-            // STEP 6: Draw cyan line after modules initialized
-            if (bootInfo->FramebufferBase != 0) {
-                uint* fb = (uint*)bootInfo->FramebufferBase;
-                uint pitch = bootInfo->FramebufferPitch / 4;
-                for (uint x = 0; x < 400; x++) {
-                    fb[140 * pitch + x] = 0x0000FFFF; // CYAN = modules OK
-                }
-            }
+            // === PHASE 5: CONTINUE INITIALIZATION ===
+            // NOTE: For UEFI boot, the bootloader already set up page tables.
+            // We skip PageTable.Initialise() to avoid overwriting them and
+            // avoid the extremely slow 4GB mapping loop.
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'T');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
             
-            // STEP 7: Initialize page tables
-            PageTable.Initialise();
+            // SKIP PageTable.Initialise() - bootloader already set up identity mapping
+            // PageTable.Initialise();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
+            
             ASC16.Initialize();
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'F');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'B');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
 
-            // STEP 8: Initialize framebuffer from UEFI GOP info
+            // Initialize framebuffer wrapper
             if (bootInfo->HasFramebuffer && bootInfo->FramebufferBase != 0) {
                 Framebuffer.Initialize(
                     (ushort)bootInfo->FramebufferWidth,
                     (ushort)bootInfo->FramebufferHeight,
                     (uint*)bootInfo->FramebufferBase
                 );
-                Framebuffer.Graphics.Clear(0x0);
-            } else {
-                // No framebuffer - halt
-                for (; ; ) Native.Hlt();
+                
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'C');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'L');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'R');
+                
+                Framebuffer.Graphics.Clear(0x0); // Clear screen
             }
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'B');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
 
-            // STEP 9: Boot splash
+            // Boot splash
             BootSplash.Initialize("Team Nexgen", "guideXOS", "Version: 0.2 UEFI");
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'N');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
+            
             Console.Setup();
             Console.WriteLine("[UEFI] Booting from UEFI bootloader");
             Console.WriteLine($"[UEFI] BootInfo Magic: 0x{bootInfo->Magic:X8}");
             Console.WriteLine($"[UEFI] BootInfo Version: {bootInfo->Version}");
             
-            // Detect architecture
             DetectArchitecture();
 
             // Initialize GDT/IDT
@@ -207,10 +369,9 @@ internal static unsafe class EntryPoint {
             IDT.Enable();
             SSE.enable_sse();
 
-            // Initialize ACPI (use RSDP from boot info if available)
+            // Initialize ACPI
             if (bootInfo->AcpiRsdp != 0) {
                 Console.WriteLine($"[ACPI] RSDP at 0x{bootInfo->AcpiRsdp:X16}");
-                // TODO: Pass RSDP to ACPI.Initialize() when it supports it
             }
             ACPI.Initialize();
 
@@ -234,7 +395,7 @@ internal static unsafe class EntryPoint {
             SATA.Initialize();
             ThreadPool.Initialize();
 
-            // Handle ramdisk from UEFI
+            // Handle ramdisk
             if (bootInfo->HasRamdisk && bootInfo->RamdiskBase != 0) {
                 Console.WriteLine($"[Initrd] Ramdisk at 0x{bootInfo->RamdiskBase:X16}, size {bootInfo->RamdiskSize} bytes");
                 new Ramdisk((IntPtr)bootInfo->RamdiskBase);
@@ -242,10 +403,8 @@ internal static unsafe class EntryPoint {
                 Console.WriteLine("[Initrd] WARNING: No ramdisk loaded!");
             }
 
-            // Initialize filesystem
             new AutoFS();
 
-            // Animate boot splash
             for (int i = 0; i < 120; i++) {
                 BootSplash.Tick();
             }
@@ -263,7 +422,7 @@ internal static unsafe class EntryPoint {
             }
 
             guideXOS.OS.Configuration.Initialize();
-
+            
             // Call main kernel entry
             KernelMain();
         }

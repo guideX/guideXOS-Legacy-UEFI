@@ -18,6 +18,112 @@ __modules_a:
     lea rax, [rel __Module]
     ret
 
+; === KERNEL ENTRY WRAPPER ===
+; This is the REAL entry point that the bootloader should call.
+; It writes debug markers BEFORE any managed code runs, proving the jump succeeded.
+; Then it calls the managed KMain function.
+;
+; Windows x64 ABI: RCX = bootInfo pointer
+; We preserve RCX and pass it to KMain.
+extern KMain
+global KMainWrapper
+KMainWrapper:
+    ; === IMMEDIATE SERIAL OUTPUT ===
+    ; Write 'W' to COM1 without any preamble - just blast it out
+    ; This proves we successfully jumped from the trampoline
+    push rcx                ; Save bootInfo pointer
+    push rdx
+    push rax
+    
+    ; Try writing without waiting first (fastest path)
+    mov dx, 0x3F8
+    mov al, 'W'             ; 'W' = Wrapper entered
+    out dx, al
+    
+    ; Now wait properly and write more
+    mov dx, 0x3FD           ; Line status register
+.wait_w:
+    in al, dx
+    test al, 0x20           ; THRE bit
+    jz .wait_w
+    mov dx, 0x3F8
+    mov al, 'R'             ; 'R' = Ready
+    out dx, al
+    
+    ; Write 'A' = About to call KMain
+.wait_a:
+    mov dx, 0x3FD
+    in al, dx
+    test al, 0x20
+    jz .wait_a
+    mov dx, 0x3F8
+    mov al, 'A'
+    out dx, al
+    
+    ; Write 'P' = Prepare
+.wait_p:
+    mov dx, 0x3FD
+    in al, dx
+    test al, 0x20
+    jz .wait_p
+    mov dx, 0x3F8
+    mov al, 'P'
+    out dx, al
+    
+    ; === FRAMEBUFFER MARKER ===
+    ; Write WHITE pixels at y=55 (different row from trampoline's y=45)
+    ; y=55, pitch=1280 pixels, 4 bytes/pixel: 55*1280*4 = 281600 = 0x44C00
+    mov rax, 0x80000000
+    add rax, 0x44C00
+    mov r10d, 0x00FFFFFF    ; WHITE (use r10 to avoid clobbering rcx!)
+    mov dword [rax], r10d
+    mov dword [rax+4], r10d
+    mov dword [rax+8], r10d
+    mov dword [rax+12], r10d
+    mov dword [rax+16], r10d
+    
+    ; Write newline to serial
+.wait_nl:
+    mov dx, 0x3FD
+    in al, dx
+    test al, 0x20
+    jz .wait_nl
+    mov dx, 0x3F8
+    mov al, 0x0D            ; CR
+    out dx, al
+.wait_nl2:
+    mov dx, 0x3FD
+    in al, dx
+    test al, 0x20
+    jz .wait_nl2
+    mov dx, 0x3F8
+    mov al, 0x0A            ; LF
+    out dx, al
+    
+    ; Restore registers
+    pop rax
+    pop rdx
+    pop rcx                 ; Restore bootInfo pointer
+    
+    ; === CALL MANAGED KMain ===
+    ; RCX still has bootInfo, stack is aligned (we pushed/popped 3 regs = 24 bytes)
+    ; But we need 16-byte alignment for the call...
+    ; After our 3 pops, we're back to entry state
+    ; The call instruction will push 8 bytes (return address)
+    ; So before call, RSP must be 16-byte aligned + 8
+    ; Assuming the trampoline set us up correctly, just call
+    
+    ; Actually let's verify/fix alignment
+    ; Push a dummy if needed (we can check later)
+    ; For now, just call - the managed code will handle its own prologue
+    
+    jmp KMain               ; Tail call to avoid stack issues
+    
+    ; If KMain returns (shouldn't happen), loop forever
+.hang:
+    hlt
+    jmp .hang
+
 ; === BOOT DEBUG HELPER ===
 ; This is called at the VERY START of KMain to prove we entered the kernel.
 ; It writes directly to serial port and framebuffer without any managed code.

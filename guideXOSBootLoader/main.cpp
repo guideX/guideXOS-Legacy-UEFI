@@ -977,8 +977,9 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     guideXOS::debug::SerialPrint("\n[BOOT] === CALLING TRAMPOLINE NOW ===\n");
 
     // Use VIRTUAL entry point. The kernel is compiled for virtual address 0x10000000.
-    // All internal calls and data references use virtual addresses.
+    // All internal calls and data references use virtual addresses (RIP-relative).
     // Our page tables map virtual 0x10XXXXXX -> physical 0x3DXXXXXX
+    guideXOS::debug::SerialPrint("[BOOT] Jumping to VIRTUAL entry point\n");
     BootHandoffTrampoline((void*)(UINTN)entryVirt, (void*)v1BootInfo, stackTop, (void*)(UINTN)pt.Pml4Phys);
 
     // If we return, halt

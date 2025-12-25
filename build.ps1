@@ -310,10 +310,11 @@ if (-not $SkipKernel) {
         exit 1
     }
 
-    Write-Info "Building kernel (ILCompiler/CoreRT style)..."
+    Write-Info "Building kernel with NativeAOT (ILCompiler)..."
 
-    # Use dotnet build (this repo's ILCompiler pipeline produces bin\\Release\\net7.0\\win-x64\\native\\guideXOS.exe)
-    dotnet build $KernelProject -c Release
+    # Use dotnet publish to trigger NativeAOT compilation
+    # 'dotnet build' only produces IL, 'dotnet publish' triggers native compilation
+    dotnet publish $KernelProject -c Release
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Kernel build failed with exit code $LASTEXITCODE"
@@ -389,13 +390,13 @@ if (-not $SkipConversion) {
         exit 1
     }
 
-    Write-Info "Converting PE to ELF64 with KMain entry point..."
+    Write-Info "Converting PE to ELF64 with KMainWrapper entry point..."
     
-    # Use the enhanced converter with explicit entry point from PDATA analysis
-    # The PDATA section shows KMain starts at RVA 0x208B0 = VA 0x100208B0
-    # This is the REAL function start, not the symbol from the map file
+    # Use the PE's default entry point (set via EntryPointSymbol in csproj)
+    # The linker sets this to KMainWrapper which provides early debugging
+    # before calling into managed KMain code
     $peToElfV2 = Join-Path $RootDir "tools\pe_to_elf_v2.py"
-    $conversionArgs = @($peToElfV2, $kernelPE, $kernelELF, "--entry", "0x100208B0")
+    $conversionArgs = @($peToElfV2, $kernelPE, $kernelELF)
     
     & $pythonExe @pythonExeArgs @conversionArgs
     
