@@ -460,8 +460,26 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'2');
             
-            Console.WriteLine($"[UEFI] BootInfo Magic: 0x{bootInfo->Magic:X8}");
-            Console.WriteLine($"[UEFI] BootInfo Version: {bootInfo->Version}");
+            // Use simple string instead of interpolation
+            Console.WriteLine("[UEFI] BootInfo Magic:");
+            
+            // Debug: After second WriteLine
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'W');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'L');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'3');
+            
+            Console.WriteLine("[UEFI] BootInfo Version: 1");
+            
+            // Debug: After third WriteLine
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'W');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'L');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'4');
             
             DetectArchitecture();
 
