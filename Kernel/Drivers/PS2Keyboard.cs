@@ -31,20 +31,71 @@ namespace guideXOS.Kernel.Drivers {
         /// Initialize PS/2 Keyboard
         /// </summary>
         public static void Initialize() {
+            // Debug: entering PS2Keyboard.Initialize
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'k');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'b');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             // Register IRQ1 (keyboard interrupt)
             Interrupts.EnableInterrupt(0x21, &OnInterrupt);
             
-            // Enable keyboard
-            Native.Hlt();
+            // Debug: after EnableInterrupt
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'k');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'b');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
+            
+            // Enable keyboard - use small busy-wait loops instead of Hlt
+            // Hlt can cause issues if interrupts fire during initialization
+            for (int i = 0; i < 100; i++) { } // Small delay
+            
+            // Debug: before Out8 command
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'k');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'b');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'a');
+            
             Native.Out8(CommandPort, 0x60); // Send command byte
-            Native.Hlt();
+            
+            for (int i = 0; i < 100; i++) { } // Small delay
+            
+            // Debug: before Out8 data
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'k');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'b');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'b');
+            
             Native.Out8(DataPort, 0x65); // Enable keyboard interrupt
-            Native.Hlt();
+            
+            for (int i = 0; i < 100; i++) { } // Small delay
+            
+            // Debug: after keyboard enable
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'k');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'b');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'3');
             
             // Reset scancode counter
             _scancodeCount = 0;
             
-            Console.WriteLine("[PS2KBD] PS/2 Keyboard initialized");
+            // Debug: done
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'k');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'b');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'4');
         }
         
         /// <summary>
