@@ -186,9 +186,10 @@ internal static unsafe class EntryPoint {
             Native.Out8(0x3F8, (byte)'\n');
             
             // === PHASE 4: INITIALIZE MODULES ===
-            // TEMPORARILY DISABLED: Module initialization may access unmapped memory
-            // The NativeAOT runtime's InitializeModules walks internal data structures
-            // that may have pointers to regions not mapped by the bootloader.
+            // The NativeAOT runtime requires module initialization for:
+            // - Static constructors
+            // - Runtime type information
+            // - GC support
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'[');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
@@ -199,28 +200,41 @@ internal static unsafe class EntryPoint {
             Native.Out8(0x3F8, (byte)'D');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)']');
+            
+            // Get the module pointer from native code
+            IntPtr modulesPtr = GetModulesPointer();
+            
+            // Print the module pointer for debugging
+            ulong modAddr = (ulong)modulesPtr;
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'S');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'K');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'I');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'P');
+            Native.Out8(0x3F8, (byte)'@');
+            
+            // Print 8 hex digits of the address
+            for (int shift = 28; shift >= 0; shift -= 4) {
+                int nibble = (int)((modAddr >> shift) & 0xF);
+                char hexChar = (char)(nibble < 10 ? '0' + nibble : 'A' + nibble - 10);
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)hexChar);
+            }
+            
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'\r');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'\n');
             
-            // SKIP module init for now - kernel basic features should still work
-            // IntPtr modulesPtr = GetModulesPointer();
-            // StartupCodeHelpers.InitializeModules(modulesPtr);
+            // Try to initialize modules
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'N');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'T');
             
-            // Draw cyan line
-            for (uint x = 0; x < 200; x++) {
-                fb[120 * pitch + x] = 0x0000FFFF;
-            }
+            StartupCodeHelpers.InitializeModules(modulesPtr);
             
+            // Module init succeeded
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'O');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
@@ -229,6 +243,11 @@ internal static unsafe class EntryPoint {
             Native.Out8(0x3F8, (byte)'\r');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'\n');
+            
+            // Draw cyan line to show modules initialized
+            for (uint x = 0; x < 200; x++) {
+                fb[120 * pitch + x] = 0x0000FFFF;
+            }
             
             // === PHASE 5: CONTINUE INITIALIZATION ===
             // NOTE: For UEFI boot, the bootloader already set up page tables.
@@ -352,6 +371,50 @@ internal static unsafe class EntryPoint {
             Native.Out8(0x3F8, (byte)'N');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)']');
+            
+            // === DEBUG: Test array allocation before Console.Setup ===
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'T');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            
+            // Try allocating a simple array to test if runtime works
+            try {
+                uint[] testArr = new uint[4];
+                testArr[0] = 0xDEADBEEF;
+                testArr[1] = 0xCAFEBABE;
+                if (testArr[0] == 0xDEADBEEF) {
+                    while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                    Native.Out8(0x3F8, (byte)'O');
+                    while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                    Native.Out8(0x3F8, (byte)'K');
+                }
+            } catch {
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'E');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'X');
+            }
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'E');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'T');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'U');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
             
             Console.Setup();
             Console.WriteLine("[UEFI] Booting from UEFI bootloader");

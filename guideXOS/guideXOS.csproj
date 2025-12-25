@@ -16,7 +16,7 @@
 		<GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
 		<ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
 
-		<DefineConstants>Kernel;UseAPIC;NETWORK;X64</DefineConstants>
+		<DefineConstants>Kernel;NETWORK;X64</DefineConstants>
 
 		<IlcSystemModule>guideXOS</IlcSystemModule>
 		<!-- CRITICAL: For UEFI boot, use KMainWrapper as the entry point -->
