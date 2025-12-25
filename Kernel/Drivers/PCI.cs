@@ -65,8 +65,59 @@ namespace guideXOS.Kernel.Drivers {
         }
 
         public static void Initialise() {
+            // Debug: entering PCI.Initialise
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'p');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'c');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'i');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             Devices = new List<PCIDevice>();
+            
+            // Debug: after list creation, before GetHeaderType
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'L');
+            
+            // Try a simple PCI read first - this might crash
+            uint addr = 0x80000000; // Bus 0, Slot 0, Function 0, Offset 0
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            
+            Native.Out32(0xCF8, addr);
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'W');
+            
+            uint val = Native.In32(0xCFC);
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            
+            // Debug: after list creation
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'p');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'c');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'i');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
+            
             if ((GetHeaderType(0x0, 0x0, 0x0) & 0x80) == 0) {
+                // Debug: before CheckBus
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'p');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'c');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'i');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'3');
+                
                 CheckBus(0);
             } else {
                 for (ushort fn = 0; fn < 8; fn++) {
@@ -77,11 +128,30 @@ namespace guideXOS.Kernel.Drivers {
                 }
             }
 
+            // Debug: after bus check
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'p');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'c');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'i');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'4');
+
             PCIExpress.Initialize();
 
-            //Console.Write("[PCI] PCI Initialized. ");
-            //Console.Write(((ulong)Devices.Count).ToString());
-            Console.WriteLine(" Devices");
+            // Debug: after PCIExpress
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'p');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'c');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'i');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'5');
+
+            // Skip Console.WriteLine with device count - use simple message
+            Console.WriteLine("[PCI] Devices enumerated");
         }
 
         public static void CheckBus(ushort Bus) {
@@ -113,7 +183,9 @@ namespace guideXOS.Kernel.Drivers {
 
                 device.DeviceID = ReadRegister16(device.Bus, device.Slot, device.Function, 2);
 
-                Console.WriteLine($"[PCI {device.Bus}:{device.Slot}:{device.Function}] {VendorID.GetName(device.VendorID)} {ClassID.GetName(device.ClassID)}");
+                // Skip verbose logging - just print a dot for each device found
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'.');
 
                 Devices.Add(device);
 

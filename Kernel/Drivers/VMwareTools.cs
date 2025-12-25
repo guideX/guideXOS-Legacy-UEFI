@@ -46,13 +46,32 @@ namespace guideXOS.Kernel.Drivers {
         public static bool Available = false;
 
         public static void Initialize() {
-            if (!(Available = is_vmware_backdoor())) return;
-
-            Console.WriteLine("[VMware tools] Initializing VMware tools");
-
-            mouse_absolute();
-
-            Interrupts.EnableInterrupt(0x2c, &vmware_handle_mouse);
+            // Debug: entering VMwareTools.Initialize
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'v');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'m');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
+            // SKIP VMware detection - it causes crashes in QEMU
+            // The vmware_send() uses special port I/O that can crash on non-VMware platforms
+            // TODO: Re-enable when running on actual VMware
+            Available = false;
+            
+            // Debug: skipping VMware detection
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'v');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'m');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
         }
 
         public static void vmware_handle_mouse() {

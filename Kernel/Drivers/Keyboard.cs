@@ -21,7 +21,19 @@ namespace guideXOS.Kernel.Drivers {
         /// Initialize
         /// </summary>
         public static void Initialize() {
+            // Debug: entering Keyboard.Initialize
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'<');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             OnKeyChanged = null;
+            
+            // Debug: after OnKeyChanged = null
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'>');
         }
         /// <summary>
         /// Invoke On Key Changed

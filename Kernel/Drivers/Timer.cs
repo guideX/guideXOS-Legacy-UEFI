@@ -5,15 +5,28 @@ namespace guideXOS.Kernel.Drivers {
         public static ulong CPU_Clock;
 
         public static void Initialize() {
-            //PIT.Initialise(1000);
-            HPET.Initialize();
-
-            CPU_Clock = EstimateCPUSpeed();
-            Console.WriteLine($"[Timer] CPU clock is {CPU_Clock / 1048576}mhz");
-            Bus_Clock = LocalAPICTimer.EstimateBusSpeed();
-            Console.WriteLine($"[Timer] Bus clock is {Bus_Clock / 1048576}mhz");
-
-            LocalAPICTimer.StartTimer(1000, 0x20);
+            // Debug: entering Timer.Initialize
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'t');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'m');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
+            // SKIP timer initialization entirely for now - just set default values
+            // The timer interrupt seems to be causing crashes
+            CPU_Clock = 1000000000; // Assume 1GHz
+            Bus_Clock = 100000000;  // Assume 100MHz bus
+            
+            // Debug: done (no timer)
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
         }
 
         private static ulong EstimateCPUSpeed() {

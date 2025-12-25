@@ -36,77 +36,141 @@ namespace guideXOS.Kernel.Drivers {
         private static int ButtonDebounceThreshold = 2; // Require 2 consistent packets before accepting button change
 
         public static void Initialise() {
+            // Debug: entering PS2Mouse.Initialise
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'m');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'s');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             MData = new byte[4];
+            
+            // Debug: after array allocation
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'m');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'s');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
+            
             Interrupts.EnableInterrupt(0x2c, &OnInterrupt);
             
-            // Load touchpad settings from UISettings
-            EnableTouchpadFiltering = UISettings.EnableTouchpadFiltering;
-            TouchpadSensitivity = UISettings.TouchpadSensitivity;
-            NoiseThreshold = UISettings.TouchpadNoiseThreshold;
-            MaxDeltaPerPacket = UISettings.TouchpadMaxDelta;
-            ButtonDebounceThreshold = UISettings.TouchpadButtonDebounce;
+            // Debug: after EnableInterrupt
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'m');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'s');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'3');
+            
+            // Use default values - skip UISettings access during early boot
+            EnableTouchpadFiltering = true;
+            TouchpadSensitivity = 0.25f;
+            NoiseThreshold = 2;
+            MaxDeltaPerPacket = 50;
+            ButtonDebounceThreshold = 2;
 
-            byte _status;
+            // Debug: after settings
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'m');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'s');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'4');
 
-            // Wait for controller to be ready
-            for (int i = 0; i < 1000; i++) Hlt();
-            Out8(Command, 0xA8); // Enable auxiliary device
-
-            // Wait for command to complete
-            for (int i = 0; i < 1000; i++) Hlt();
-            Out8(Command, 0x20); // Read controller config
-            for (int i = 0; i < 1000; i++) Hlt();
-            _status = ((byte)(In8(0x60) | 3)); // Enable IRQ12 and IRQ1
-            for (int i = 0; i < 1000; i++) Hlt();
-            Out8(Command, 0x60); // Write controller config
-            for (int i = 0; i < 1000; i++) Hlt();
-            Out8(Data, _status);
-
-            // Wait before sending mouse commands
-            for (int i = 0; i < 1000; i++) Hlt();
+            // SIMPLIFIED PS/2 MOUSE INIT - avoid complex controller config
+            // The UEFI firmware likely already configured the PS/2 controller
+            
+            // Wait for controller input buffer to be empty before sending commands
+            WaitForInputBuffer();
+            Out8(Command, 0xA8); // Enable auxiliary device (mouse port)
+            
+            // Debug: after enable aux
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'a');
+            
+            // Simple mouse initialization - just enable data reporting
+            for (int i = 0; i < 1000; i++) { } // Small delay
             WriteRegister(SetDefaults);
-            for (int i = 0; i < 1000; i++) Hlt();
+            
+            // Debug: after set defaults
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'b');
+            
+            for (int i = 0; i < 1000; i++) { } // Small delay
             WriteRegister(EnableDataReporting);
-
-            // IntelliMouse detection sequence
-            for (int i = 0; i < 1000; i++) Hlt();
-            WriteRegister(0xF3); // Set Sample Rate
-            WriteRegister(200);
-            for (int i = 0; i < 1000; i++) Hlt();
-            WriteRegister(0xF3); // Set Sample Rate
-            WriteRegister(100);
-            for (int i = 0; i < 1000; i++) Hlt();
-            WriteRegister(0xF3); // Set Sample Rate
-            WriteRegister(80);
-            for (int i = 0; i < 1000; i++) Hlt();
-            WriteRegister(0xF2); // Get Device ID
-            ReadRegister(); // Discard ACK
-            byte deviceId = ReadRegister(); // Should be 0x03 for wheel mouse
+            
+            // Debug: after enable reporting
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'c');
 
             Control.MouseButtons = MouseButtons.None;
             DeltaZ = 0;
             
-            Console.WriteLine("[PS2Mouse] Initialized (DeviceID: 0x" + deviceId.ToString("X2") + ")");
+            // Debug: done
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'m');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'s');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'6');
+        }
+        
+        /// <summary>
+        /// Enable full mouse processing after boot is complete
+        /// </summary>
+        public static void EnableFullProcessing() {
+            _initComplete = true;
+        }
+        
+        /// <summary>
+        /// Wait for PS/2 controller input buffer to be empty (ready to receive command)
+        /// </summary>
+        private static void WaitForInputBuffer() {
+            int timeout = 10000;
+            while ((In8(0x64) & 0x02) != 0 && timeout > 0) {
+                timeout--;
+            }
         }
 
         public static void WriteRegister(byte value) {
-            // Wait for controller ready
-            for (int i = 0; i < 100; i++) Hlt();
+            // Wait for controller input buffer ready (bit 1 clear = ready)
+            WaitForInputBuffer();
             Out8(Command, 0xD4); // Tell controller to send to mouse
-            for (int i = 0; i < 100; i++) Hlt();
+            WaitForInputBuffer();
             Out8(Data, value);
-            for (int i = 0; i < 100; i++) Hlt();
-            ReadRegister(); // Wait for ACK
+            // Wait for ACK with timeout
+            for (int i = 0; i < 10000; i++) {
+                if ((In8(0x64) & 0x01) != 0) { // Output buffer full
+                    In8(Data); // Read and discard ACK
+                    break;
+                }
+            }
         }
 
         public static byte ReadRegister() {
-            Hlt();
-            return In8(Data);
+            // Wait for output buffer to have data
+            for (int i = 0; i < 10000; i++) {
+                if ((In8(0x64) & 0x01) != 0) {
+                    return In8(Data);
+                }
+            }
+            return 0; // Timeout
         }
+
+        // Flag to indicate if full mouse processing is enabled
+        private static bool _initComplete = false;
 
         public static void OnInterrupt() {
             byte D = In8(Data);
             InterruptCount++; // Count all interrupts for debugging
+            
+            // During early boot, just read and discard data
+            // This prevents crashes from accessing uninitialized objects
+            if (!_initComplete) {
+                return;
+            }
             
             if (VMwareTools.Available) return;
 

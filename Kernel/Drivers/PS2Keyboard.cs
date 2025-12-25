@@ -98,11 +98,20 @@ namespace guideXOS.Kernel.Drivers {
             Native.Out8(0x3F8, (byte)'4');
         }
         
+        // Flag to indicate if full keyboard processing is enabled
+        private static bool _initComplete = false;
+        
         /// <summary>
         /// Keyboard interrupt handler
         /// </summary>
         public static void OnInterrupt() {
             byte scancode = Native.In8(DataPort);
+            
+            // During early boot, just read and discard scancodes
+            // This prevents crashes from accessing uninitialized objects
+            if (!_initComplete) {
+                return;
+            }
             
             // QEMU workaround: Filter out spurious 0x00 scancodes
             if (scancode == 0x00) {
@@ -187,6 +196,13 @@ namespace guideXOS.Kernel.Drivers {
             // Invoke keyboard events
             Keyboard.InvokeOnKeyChanged(Keyboard.KeyInfo);
             Kbd2Mouse.OnKeyChanged(Keyboard.KeyInfo);
+        }
+        
+        /// <summary>
+        /// Enable full keyboard processing after boot is complete
+        /// </summary>
+        public static void EnableFullProcessing() {
+            _initComplete = true;
         }
         
         /// <summary>
