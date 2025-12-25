@@ -390,13 +390,20 @@ if (-not $SkipConversion) {
         exit 1
     }
 
-    Write-Info "Converting PE to ELF64 with KMainWrapper entry point..."
+    Write-Info "Converting PE to ELF64 with KMain entry point..."
     
-    # Use the PE's default entry point (set via EntryPointSymbol in csproj)
-    # The linker sets this to KMainWrapper which provides early debugging
-    # before calling into managed KMain code
+    # Use the enhanced pe_to_elf_v2.py which searches for function prologue
+    # This handles NativeAOT RuntimeExport symbols that may point to epilogue
     $peToElfV2 = Join-Path $RootDir "tools\pe_to_elf_v2.py"
-    $conversionArgs = @($peToElfV2, $kernelPE, $kernelELF)
+    
+    # Check if map file exists (contains symbol addresses)
+    if (Test-Path $kernelMap) {
+        Write-Info "Using map file for entry point: $kernelMap"
+        $conversionArgs = @($peToElfV2, $kernelPE, $kernelELF, "--map", $kernelMap, "--symbol", "KMain")
+    } else {
+        Write-Warning "Map file not found - using PE entry point"
+        $conversionArgs = @($peToElfV2, $kernelPE, $kernelELF)
+    }
     
     & $pythonExe @pythonExeArgs @conversionArgs
     

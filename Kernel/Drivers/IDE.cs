@@ -200,12 +200,34 @@ namespace guideXOS.Kernel.Drivers {
                 while ((Native.In8(0x3FD) & 0x20) == 0) { }
                 Native.Out8(0x3F8, (byte)'P');
                 
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)((byte)'0' + port)); // Print port number
+                
                 Native.Out8(DeviceHeadPort, (byte)((port == 0) ? 0xA0 : 0xB0));
+                
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'a');
+                
                 Native.Out8(SectorCountPort, 0);
                 Native.Out8(LBALowPort, 0);
                 Native.Out8(LBAMidPort, 0);
                 Native.Out8(LBAHighPort, 0);
+                
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'b');
+                
                 Native.Out8(CommandPort, IDEDevice.IdentifyDrive);
+                
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'c');
+                
+                // Add a small delay after sending command
+                for (int d = 0; d < 1000; d++) {
+                    Native.In8(StatusPort); // Poll status as a delay
+                }
+                
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'d');
 
                 if (
                     Native.In8(StatusPort) == 0 ||

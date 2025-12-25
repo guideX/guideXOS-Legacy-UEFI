@@ -155,11 +155,19 @@ namespace guideXOS.Kernel.Drivers {
         }
 
         public static void CheckBus(ushort Bus) {
+            // Debug: entering CheckBus
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'B');
+            
             for (ushort slot = 0; slot < 32; slot++) {
                 ushort vendorID = GetVendorID(Bus, slot, 0);
                 if (vendorID == 0xFFFF) {
                     continue;
                 }
+                
+                // Debug: found device
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'.');
 
                 PCIDevice device = new PCIDevice();
                 device.Bus = Bus;
@@ -183,16 +191,16 @@ namespace guideXOS.Kernel.Drivers {
 
                 device.DeviceID = ReadRegister16(device.Bus, device.Slot, device.Function, 2);
 
-                // Skip verbose logging - just print a dot for each device found
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'.');
-
                 Devices.Add(device);
 
                 if (device.ClassID == 0x06 && device.SubClassID == 0x04) {
                     CheckBus(ReadRegister8(device.Bus, device.Slot, device.Function, 25));
                 }
             }
+            
+            // Debug: CheckBus complete
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'E');
         }
 
         public static void WriteRegister32(ushort Bus, ushort Slot, ushort Function, byte aRegister, uint Value) {

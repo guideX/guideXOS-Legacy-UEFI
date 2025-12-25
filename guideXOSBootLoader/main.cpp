@@ -476,7 +476,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     // CRITICAL: Stack must NOT overlap with kernel!
     // Strategy: Allocate stack at low memory (below kernel load address)
     // Kernel loads around ~0x3D785000, so we'll use 0x200000 (2MB) as base
-    const UINTN stackPages = 16; // 64 KiB stack
+    const UINTN stackPages = 128; // 512 KiB stack (very generous for deep call chains)
     EFI_PHYSICAL_ADDRESS stackPhys = 0;
     void* stackTop = nullptr;
     
