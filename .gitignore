@@ -7,3 +7,9 @@
 /guideXOS/Kernel.map
 /x64/Debug/guideXOSBootLoader.exe
 /x64/Debug/guideXOSBootLoader.efi
+/kernel.elf
+/guideXOS/native_stubs.obj
+/Tools/grub2/boot/kernel.bin
+/ESP/EFI/BOOT/BOOTX64.EFI
+/ESP/NvVars
+/ESP/kernel.elf

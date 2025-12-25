@@ -415,9 +415,51 @@ internal static unsafe class EntryPoint {
             Native.Out8(0x3F8, (byte)'U');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'P');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
             
             Console.Setup();
+            
+            // After Console.Setup
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'N');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'N');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'E');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            // Debug: About to call WriteLine
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'W');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'L');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             Console.WriteLine("[UEFI] Booting from UEFI bootloader");
+            
+            // Debug: After first WriteLine
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'W');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'L');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
+            
             Console.WriteLine($"[UEFI] BootInfo Magic: 0x{bootInfo->Magic:X8}");
             Console.WriteLine($"[UEFI] BootInfo Version: {bootInfo->Version}");
             
