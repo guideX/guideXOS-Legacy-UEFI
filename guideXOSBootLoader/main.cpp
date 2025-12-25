@@ -720,18 +720,24 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
     // 11. CRITICAL: Map the allocator region the kernel will use
     // The kernel's Allocator.Initialize() uses 0x4000000 (64MB) as the base
-    // Map a large region starting there for heap allocations
+    // Map a LARGE region starting there for heap allocations (1GB total)
+    // The kernel's NumPages = 262144 * 4KB = 1GB
     ranges[rangeCount] = 0x4000000ULL;  // 64MB
-    sizes[rangeCount] = 64u * 1024u * 1024u; // 64MB of heap space
+    sizes[rangeCount] = 1024u * 1024u * 1024u; // 1GB of heap space
     rangeCount++;
-    Print(L"Mapping allocator region: 0x4000000 size 64MB\n");
+    Print(L"Mapping allocator region: 0x4000000 size 1GB\n");
 
     // 12. Map additional stack regions we might use
     // The preferred stack location is around 2MB mark
     ranges[rangeCount] = 0x100000ULL; // 1MB
-    sizes[rangeCount] = 2u * 1024u * 1024u; // 2MB (covers 1MB-3MB region)
+    sizes[rangeCount] = 4u * 1024u * 1024u; // 4MB (covers 1MB-5MB region)
     rangeCount++;
-    Print(L"Mapping low memory stack region: 0x100000 size 2MB\n");
+    Print(L"Mapping low memory region: 0x100000 size 4MB\n");
+    
+    // NOTE: Do NOT identity-map the kernel virtual address range here!
+    // The kernel virtual addresses (0x10XXXXXX) need to map to the PHYSICAL
+    // addresses where the kernel was loaded (0x3DXXXXXX).
+    // This is done separately by MapRange() after BuildIdentityPageTables().
 
     Print(L"Building identity page tables with %u ranges...\n", (UINT32)rangeCount);
 

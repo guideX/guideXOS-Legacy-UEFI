@@ -161,22 +161,11 @@ BootHandoffTrampoline:
     out dx, al
 
     ; === Stage 5: Jump to kernel ===
-    ; IMPORTANT: Before jumping, verify we can write to the framebuffer
-    ; This proves our page tables work for the framebuffer region
+    ; NOTE: Framebuffer writes removed - the actual framebuffer address comes
+    ; from GOP and is passed in bootInfo. The hardcoded 0x80000000 was wrong.
+    ; The kernel will handle framebuffer output after parsing bootInfo.
     
-    ; Write CYAN pixels at y=45 (above where kernel would write at y=50)
-    ; Framebuffer at 0x80000000, pitch 1280 pixels, y=45 means offset 45*1280=57600 pixels
-    ; Each pixel is 4 bytes, so byte offset = 57600*4 = 230400 = 0x38400
-    mov rax, 0x80000000
-    add rax, 0x38400        ; y=45, x=0
-    mov ecx, 0x00FFFF00     ; CYAN color (BGR format: yellow actually)
-    mov dword [rax], ecx    ; pixel at y=45, x=0
-    mov dword [rax+4], ecx  ; pixel at y=45, x=1
-    mov dword [rax+8], ecx  ; pixel at y=45, x=2
-    mov dword [rax+12], ecx ; pixel at y=45, x=3
-    mov dword [rax+16], ecx ; pixel at y=45, x=4
-    
-    ; Write 'F' to serial to confirm framebuffer write completed
+    ; Write 'F' to serial to indicate ready for jump
     mov dx, 03F8h
 .wait_F:
     add dx, 5
@@ -454,16 +443,6 @@ BootHandoffTrampoline:
     mov dx, 03F8h
     mov al, 0Ah
     out dx, al
-    
-    ; === WRITE MARKER TO FRAMEBUFFER AT y=60 ===
-    ; This will be visible even if serial fails
-    mov rax, 0x80000000
-    add rax, 0x4B000            ; y=60, offset = 60*1280*4 = 307200 = 0x4B000
-    mov dword [rax], 0x00FF0000     ; RED pixel before call
-    mov dword [rax+4], 0x00FF0000
-    mov dword [rax+8], 0x00FF0000
-    mov dword [rax+12], 0x00FF0000
-    mov dword [rax+16], 0x00FF0000
     
     ; Write '!' to show we're about to call
     mov dx, 03F8h
@@ -767,18 +746,6 @@ BootHandoffTrampoline:
     mov al, 0Ah
     out dx, al
     
-    ; === WRITE GREEN PIXELS AT y=65 BEFORE JUMP ===
-    mov rax, 0x80000000
-    add rax, 0x50000            ; y=65, offset = 65*1280*4 = 332800 = 0x51400... let me recalc
-    ; y=65: 65*1280*4 = 332800 = 0x51400
-    mov rax, 0x80000000
-    add rax, 0x51400
-    mov dword [rax], 0x0000FF00     ; GREEN pixel
-    mov dword [rax+4], 0x0000FF00
-    mov dword [rax+8], 0x0000FF00
-    mov dword [rax+12], 0x0000FF00
-    mov dword [rax+16], 0x0000FF00
-    
     ; Write '!' right before final jump
     mov dx, 03F8h
 .wait_final:
@@ -913,69 +880,16 @@ BootHandoffTrampoline:
     mov al, 0Ah
     out dx, al
     
-    ; === EXECUTE KERNEL'S FIRST INSTRUCTIONS DIRECTLY ===
-    ; Instead of jumping, execute the prologue + first instruction here
-    ; The prologue is: push rbp; push r15; push r14; push r13; push r12; push rdi; push rsi; push rbx; sub rsp, 0x48
-    ; = bytes: 55 41 57 41 56 41 55 41 54 57 56 53 48 83 EC 48
-    ; After prologue, the code does: mov rcx, 0x80000000 (or loads from data section)
+    ; === SIMPLIFIED KERNEL JUMP ===
+    ; At this point we've done extensive validation:
+    ; - Page tables are set up and verified
+    ; - Stack is accessible
+    ; - Kernel entry is readable
+    ; - All debug markers printed
+    ;
+    ; Now just do a clean jump to the kernel.
     
-    ; Execute the prologue
-    push rbp
-    push r15
-    push r14
-    push r13
-    push r12
-    push rdi
-    push rsi
-    push rbx
-    sub rsp, 0x48
-    
-    ; Write 'P' to show prologue executed in trampoline
-    mov dx, 03F8h
-.wait_P2:
-    add dx, 5
-    in al, dx
-    test al, 20h
-    jz .wait_P2
-    sub dx, 5
-    mov al, 'P'
-    out dx, al
-    
-    ; Now we're in the same stack state as after the kernel's prologue
-    ; The next instructions in the kernel would try to execute Native.Out8(0x3F8, 'K')
-    ; Let's do that here
-    mov dx, 0x3F8
-    mov al, 'K'
-    out dx, al
-    
-    ; Write '!' 
-    mov al, '!'
-    out dx, al
-    
-    ; Write 'O' to show we did kernel-like output
-    mov dx, 03F8h
-.wait_O:
-    add dx, 5
-    in al, dx
-    test al, 20h
-    jz .wait_O
-    sub dx, 5
-    mov al, 'O'
-    out dx, al
-    
-    ; === NOW TRY TO JUMP TO KERNEL ===
-    ; But first, undo our prologue
-    add rsp, 0x48
-    pop rbx
-    pop rsi
-    pop rdi
-    pop r12
-    pop r13
-    pop r14
-    pop r15
-    pop rbp
-    
-    ; Restore RCX with bootInfo
+    ; Restore RCX with bootInfo (we may have clobbered it)
     mov rcx, r13
     
     ; Write '^' before final jump
@@ -989,11 +903,30 @@ BootHandoffTrampoline:
     mov al, '^'
     out dx, al
     
-    ; Push a fake return address (we'll halt anyway if kernel returns)
-    lea rax, [rel .kernel_returned]
-    push rax
+    ; Write newline
+    mov dx, 03FDh
+.wait_caret_nl:
+    in al, dx
+    test al, 20h
+    jz .wait_caret_nl
+    mov dx, 03F8h
+    mov al, 0Dh
+    out dx, al
+.wait_caret_nl2:
+    mov dx, 03FDh
+    in al, dx
+    test al, 20h
+    jz .wait_caret_nl2
+    mov dx, 03F8h
+    mov al, 0Ah
+    out dx, al
     
-    ; JMP to kernel instead of CALL
+    ; === FINAL JUMP TO KERNEL ===
+    ; RCX = bootInfo pointer (MS x64 ABI first argument)
+    ; Stack is 16-byte aligned (we're using the new stack from r14)
+    ; Page tables are loaded in CR3
+    ;
+    ; Use JMP instead of CALL to avoid any stack issues
     jmp r12
     
 .kernel_returned:

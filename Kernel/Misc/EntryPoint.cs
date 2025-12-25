@@ -77,16 +77,21 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)']');
             
-            // Write directly to framebuffer using raw pointer
-            // Framebuffer is identity-mapped at 0x80000000
-            uint* fb0 = (uint*)0x80000000;
+            // Get actual framebuffer base from bootInfo (NOT hardcoded!)
+            // The framebuffer address depends on the UEFI firmware and GPU
+            ulong fbBase = bootInfo != null ? bootInfo->FramebufferBase : 0;
             
-            // Write WHITE pixels at (0,0)
-            fb0[0] = 0x00FFFFFF;
-            fb0[1] = 0x00FFFFFF;
-            fb0[2] = 0x00FFFFFF;
-            fb0[3] = 0x00FFFFFF;
-            fb0[4] = 0x00FFFFFF;
+            // Only write to framebuffer if we have a valid base address
+            if (fbBase != 0) {
+                uint* fb0 = (uint*)fbBase;
+                
+                // Write WHITE pixels at (0,0)
+                fb0[0] = 0x00FFFFFF;
+                fb0[1] = 0x00FFFFFF;
+                fb0[2] = 0x00FFFFFF;
+                fb0[3] = 0x00FFFFFF;
+                fb0[4] = 0x00FFFFFF;
+            }
             
             // Confirm framebuffer write
             while ((Native.In8(0x3FD) & 0x20) == 0) { }

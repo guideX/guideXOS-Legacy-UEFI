@@ -29,30 +29,32 @@ extern KMain
 global KMainWrapper
 KMainWrapper:
     ; === IMMEDIATE SERIAL OUTPUT ===
-    ; Write 'W' to COM1 without any preamble - just blast it out
-    ; This proves we successfully jumped from the trampoline
-    push rcx                ; Save bootInfo pointer
+    ; Write 'WRAP' to COM1 to prove we got here
+    ; Save all registers we'll use
+    push rcx                ; Save bootInfo pointer (will be restored before jmp)
     push rdx
     push rax
+    push r10
+    push r11
     
-    ; Try writing without waiting first (fastest path)
+    ; Write 'W'
     mov dx, 0x3F8
-    mov al, 'W'             ; 'W' = Wrapper entered
+    mov al, 'W'
     out dx, al
     
-    ; Now wait properly and write more
-    mov dx, 0x3FD           ; Line status register
-.wait_w:
-    in al, dx
-    test al, 0x20           ; THRE bit
-    jz .wait_w
-    mov dx, 0x3F8
-    mov al, 'R'             ; 'R' = Ready
-    out dx, al
-    
-    ; Write 'A' = About to call KMain
-.wait_a:
+    ; Write 'R'
     mov dx, 0x3FD
+.wait_r:
+    in al, dx
+    test al, 0x20
+    jz .wait_r
+    mov dx, 0x3F8
+    mov al, 'R'
+    out dx, al
+    
+    ; Write 'A'
+    mov dx, 0x3FD
+.wait_a:
     in al, dx
     test al, 0x20
     jz .wait_a
@@ -60,9 +62,9 @@ KMainWrapper:
     mov al, 'A'
     out dx, al
     
-    ; Write 'P' = Prepare
-.wait_p:
+    ; Write 'P'
     mov dx, 0x3FD
+.wait_p:
     in al, dx
     test al, 0x20
     jz .wait_p
@@ -70,64 +72,236 @@ KMainWrapper:
     mov al, 'P'
     out dx, al
     
-    ; === FRAMEBUFFER MARKER ===
-    ; Write WHITE pixels at y=55 (different row from trampoline's y=45)
-    ; y=55, pitch=1280 pixels, 4 bytes/pixel: 55*1280*4 = 281600 = 0x44C00
-    mov rax, 0x80000000
-    add rax, 0x44C00
-    mov r10d, 0x00FFFFFF    ; WHITE (use r10 to avoid clobbering rcx!)
-    mov dword [rax], r10d
-    mov dword [rax+4], r10d
-    mov dword [rax+8], r10d
-    mov dword [rax+12], r10d
-    mov dword [rax+16], r10d
-    
-    ; Write newline to serial
-.wait_nl:
+    ; Write '2' to mark this is the NEW code
     mov dx, 0x3FD
+.wait_2:
     in al, dx
     test al, 0x20
-    jz .wait_nl
+    jz .wait_2
     mov dx, 0x3F8
-    mov al, 0x0D            ; CR
+    mov al, '2'
     out dx, al
-.wait_nl2:
+    
+    ; Write newline
     mov dx, 0x3FD
+.wait_nl1:
+    in al, dx
+    test al, 0x20
+    jz .wait_nl1
+    mov dx, 0x3F8
+    mov al, 0x0D
+    out dx, al
+    
+    mov dx, 0x3FD
+.wait_nl2:
     in al, dx
     test al, 0x20
     jz .wait_nl2
     mov dx, 0x3F8
-    mov al, 0x0A            ; LF
+    mov al, 0x0A
+    out dx, al
+    
+    ; === Print KMain address ===
+    ; Write 'J='
+    mov dx, 0x3FD
+.wait_j:
+    in al, dx
+    test al, 0x20
+    jz .wait_j
+    mov dx, 0x3F8
+    mov al, 'J'
+    out dx, al
+    
+    mov dx, 0x3FD
+.wait_eq:
+    in al, dx
+    test al, 0x20
+    jz .wait_eq
+    mov dx, 0x3F8
+    mov al, '='
+    out dx, al
+    
+    ; Get KMain address and print it
+    lea r10, [rel KMain]
+    mov r11d, 8             ; 8 hex digits (low 32 bits)
+.print_addr:
+    rol r10d, 4
+    mov al, r10b
+    and al, 0x0F
+    add al, '0'
+    cmp al, '9'
+    jbe .digit_ok
+    add al, 7
+.digit_ok:
+    push rax
+    mov dx, 0x3FD
+.wait_digit:
+    in al, dx
+    test al, 0x20
+    jz .wait_digit
+    pop rax
+    mov dx, 0x3F8
+    out dx, al
+    dec r11d
+    jnz .print_addr
+    
+    ; Newline
+    mov dx, 0x3FD
+.wait_nl3:
+    in al, dx
+    test al, 0x20
+    jz .wait_nl3
+    mov dx, 0x3F8
+    mov al, 0x0D
+    out dx, al
+    
+    mov dx, 0x3FD
+.wait_nl4:
+    in al, dx
+    test al, 0x20
+    jz .wait_nl4
+    mov dx, 0x3F8
+    mov al, 0x0A
+    out dx, al
+    
+    ; === Try to read first byte of KMain ===
+    lea r10, [rel KMain]
+    
+    ; Write 'T' before trying to read (Test)
+    mov dx, 0x3FD
+.wait_t:
+    in al, dx
+    test al, 0x20
+    jz .wait_t
+    mov dx, 0x3F8
+    mov al, 'T'
+    out dx, al
+    
+    mov al, [r10]           ; Try to read first byte of KMain
+    mov r11b, al            ; Save the byte
+    
+    ; Write 'R' = Read succeeded
+    mov dx, 0x3FD
+.wait_read:
+    in al, dx
+    test al, 0x20
+    jz .wait_read
+    mov dx, 0x3F8
+    mov al, 'R'
+    out dx, al
+    
+    ; Print the byte as 2 hex digits
+    mov al, r11b
+    shr al, 4
+    add al, '0'
+    cmp al, '9'
+    jbe .high_ok
+    add al, 7
+.high_ok:
+    push rax
+    mov dx, 0x3FD
+.wait_high:
+    in al, dx
+    test al, 0x20
+    jz .wait_high
+    pop rax
+    mov dx, 0x3F8
+    out dx, al
+    
+    mov al, r11b
+    and al, 0x0F
+    add al, '0'
+    cmp al, '9'
+    jbe .low_ok
+    add al, 7
+.low_ok:
+    push rax
+    mov dx, 0x3FD
+.wait_low:
+    in al, dx
+    test al, 0x20
+    jz .wait_low
+    pop rax
+    mov dx, 0x3F8
+    out dx, al
+    
+    ; Newline before jump
+    mov dx, 0x3FD
+.wait_nl5:
+    in al, dx
+    test al, 0x20
+    jz .wait_nl5
+    mov dx, 0x3F8
+    mov al, 0x0D
+    out dx, al
+    
+    mov dx, 0x3FD
+.wait_nl6:
+    in al, dx
+    test al, 0x20
+    jz .wait_nl6
+    mov dx, 0x3F8
+    mov al, 0x0A
+    out dx, al
+    
+    ; Write 'GO' before jump
+    mov dx, 0x3FD
+.wait_g:
+    in al, dx
+    test al, 0x20
+    jz .wait_g
+    mov dx, 0x3F8
+    mov al, 'G'
+    out dx, al
+    
+    mov dx, 0x3FD
+.wait_o:
+    in al, dx
+    test al, 0x20
+    jz .wait_o
+    mov dx, 0x3F8
+    mov al, 'O'
+    out dx, al
+    
+    mov dx, 0x3FD
+.wait_nl7:
+    in al, dx
+    test al, 0x20
+    jz .wait_nl7
+    mov dx, 0x3F8
+    mov al, 0x0D
+    out dx, al
+    
+    mov dx, 0x3FD
+.wait_nl8:
+    in al, dx
+    test al, 0x20
+    jz .wait_nl8
+    mov dx, 0x3F8
+    mov al, 0x0A
     out dx, al
     
     ; Restore registers
+    pop r11
+    pop r10
     pop rax
     pop rdx
     pop rcx                 ; Restore bootInfo pointer
     
-    ; === CALL MANAGED KMain ===
-    ; RCX still has bootInfo, stack is aligned (we pushed/popped 3 regs = 24 bytes)
-    ; But we need 16-byte alignment for the call...
-    ; After our 3 pops, we're back to entry state
-    ; The call instruction will push 8 bytes (return address)
-    ; So before call, RSP must be 16-byte aligned + 8
-    ; Assuming the trampoline set us up correctly, just call
+    ; === JUMP TO MANAGED KMain ===
+    ; RCX = bootInfo pointer (MS x64 ABI first argument)
+    jmp KMain
     
-    ; Actually let's verify/fix alignment
-    ; Push a dummy if needed (we can check later)
-    ; For now, just call - the managed code will handle its own prologue
-    
-    jmp KMain               ; Tail call to avoid stack issues
-    
-    ; If KMain returns (shouldn't happen), loop forever
+    ; If KMain returns (shouldn't happen), halt
 .hang:
     hlt
     jmp .hang
 
 ; === BOOT DEBUG HELPER ===
 ; This is called at the VERY START of KMain to prove we entered the kernel.
-; It writes directly to serial port and framebuffer without any managed code.
-; SerialDebugMarker() - writes 'K' to COM1 (0x3F8) and magenta pixel to framebuffer
+; It writes directly to serial port - framebuffer writes removed since we
+; don't know the framebuffer address here without the bootInfo parameter.
+; SerialDebugMarker() - writes 'K!' to COM1 (0x3F8)
 global SerialDebugMarker
 SerialDebugMarker:
     push rax
@@ -153,15 +327,8 @@ SerialDebugMarker:
     mov al, '!'
     out dx, al
     
-    ; Write MAGENTA pixel to framebuffer at y=50, x=0
-    ; Framebuffer = 0x80000000, y=50 with pitch 1280 = offset 50*1280*4 = 256000 = 0x3E800
-    mov rax, 0x80000000
-    add rax, 0x3E800        ; y=50, x=0
-    mov dword [rax], 0x00FF00FF     ; MAGENTA pixel
-    mov dword [rax+4], 0x00FF00FF   ; 2nd pixel
-    mov dword [rax+8], 0x00FF00FF   ; 3rd pixel
-    mov dword [rax+12], 0x00FF00FF  ; 4th pixel
-    mov dword [rax+16], 0x00FF00FF  ; 5th pixel
+    ; NOTE: Framebuffer write removed - we don't have bootInfo here
+    ; The managed KMain code will do framebuffer writes after validating bootInfo
     
     pop rdx
     pop rax
