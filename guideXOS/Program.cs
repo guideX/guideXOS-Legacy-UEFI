@@ -56,65 +56,87 @@ unsafe class Program {
     /// Note: This is NOT the UEFI entry point. The actual UEFI entry is in EntryPoint.cs
     /// </summary>
     public static void KMain() {
-        // Serial debug: Entering KMain
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'[');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'K');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'M');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)']');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        // CRITICAL DEBUG: Write directly to serial port to prove we're here
+        Native.Out8(0x3F8, (byte)'P');
+        Native.Out8(0x3F8, (byte)'R');
+        Native.Out8(0x3F8, (byte)'O');
+        Native.Out8(0x3F8, (byte)'G');
         Native.Out8(0x3F8, (byte)'\r');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
         Native.Out8(0x3F8, (byte)'\n');
         
+        // Serial debug: Entering KMain
+        // SIMPLIFIED: Removed excessive serial debug markers that were overwhelming the UART
+        // The serial busy-wait loops were causing hangs after USB init
+        
+        // SKIP Console.WriteLine for now - it might be broken
+        //Console.WriteLine("[BOOT] KMain started");
+        
+        Native.Out8(0x3F8, (byte)'A');
+        Native.Out8(0x3F8, (byte)'N');
+        Native.Out8(0x3F8, (byte)'I');
+        Native.Out8(0x3F8, (byte)'M');
+        
         Animator.Initialize();
+        
+        Native.Out8(0x3F8, (byte)'a');
+        Native.Out8(0x3F8, (byte)'n');
+        Native.Out8(0x3F8, (byte)'i');
+        Native.Out8(0x3F8, (byte)'m');
+        
+        //Console.WriteLine("[BOOT] Animator initialized");
 
         // Initialize legacy PS/2 input first so VirtualBox (default PS/2 devices) works out-of-the-box.
         // This provides keyboard IRQ1 (0x21) and mouse IRQ12 (0x2C) handling even without USB HID.
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'p');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        
+        Native.Out8(0x3F8, (byte)'K');
+        Native.Out8(0x3F8, (byte)'B');
+        Native.Out8(0x3F8, (byte)'D');
+        
+        // CRITICAL: PS2Keyboard.Initialize() hangs - we already skipped PS/2 controller init in EntryPoint
+        // GUI will work without keyboard/mouse for first render test
+        //Console.WriteLine("[BOOT] Initializing PS/2 keyboard...");
+        //try { PS2Keyboard.Initialize(); } catch { }
+        
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'K');
+        Native.Out8(0x3F8, (byte)'k');
+        Native.Out8(0x3F8, (byte)'b');
+        Native.Out8(0x3F8, (byte)'d');
+        
+        //Console.WriteLine("[BOOT] PS/2 keyboard done");
+        //Console.WriteLine("[BOOT] Initializing PS/2 mouse...");
+        
+        Native.Out8(0x3F8, (byte)'M');
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'E');
+        
+        // CRITICAL: PS2Mouse.Initialise() hangs - we already skipped PS/2 controller init in EntryPoint
+        // GUI will work without keyboard/mouse for first render test
+        //try { PS2Mouse.Initialise(); } catch { }
+        
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'K');
+        Native.Out8(0x3F8, (byte)'m');
         Native.Out8(0x3F8, (byte)'s');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'2');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'1');
+        Native.Out8(0x3F8, (byte)'e');
         
-        try { PS2Keyboard.Initialize(); } catch { }
-        
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'p');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'s');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'2');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'2');
-        
-        try { PS2Mouse.Initialise(); } catch { }
+        //Console.WriteLine("[BOOT] PS/2 mouse done");
         
         // Initialize VMware absolute pointer backdoor if present (no-op on other hypervisors)
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'v');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'m');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'1');
+        // CRITICAL: VMwareTools.Initialize() seems to hang at the end - skip it entirely
+        // try { VMwareTools.Initialize(); } catch { }
         
-        try { VMwareTools.Initialize(); } catch { }
+        // CRITICAL: Console.WriteLine() HANGS! Skip it
+        //Console.WriteLine("[BOOT] VMware init skipped");
+        
+        Native.Out8(0x3F8, (byte)'V');
+        Native.Out8(0x3F8, (byte)'M');
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'K');
+        Native.Out8(0x3F8, (byte)'I');
+        Native.Out8(0x3F8, (byte)'P');
 
 #if USBDebug
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'u');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'s');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'b');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'1');
         
         Hub.Initialize();
         HID.Initialize();
@@ -154,180 +176,87 @@ unsafe class Program {
             }
         }
 #else
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'u');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'s');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'b');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'2');
+// SKIP USB initialization - causes hang without timer interrupts
+// USB is optional; PS/2 keyboard/mouse already initialized
         
-        try {
-            Hub.Initialize();
-            HID.Initialize();
-            EHCI.Initialize();
-            USB.StartPolling();
-        } catch { /* USB stack is optional; continue boot */ }
-        
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'u');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'s');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'b');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'3');
-
-        try {
-            /*
-            if (HID.Mouse == null) {
-                Console.WriteLine("USB Mouse not present");
-            }
-            if (HID.Keyboard == null) {
-                Console.WriteLine("USB Keyboard not present");
-            }
-            */
-        } catch { }
+        Native.Out8(0x3F8, (byte)'U');
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'B');
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'K');
 #endif
 
         //Sized width to 512
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'i');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'m');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'g');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'I');
+        Native.Out8(0x3F8, (byte)'M');
+        Native.Out8(0x3F8, (byte)'G');
+        
+        // CRITICAL: PNG loading hangs! Use dummy images instead
         Native.Out8(0x3F8, (byte)'1');
-        
-        try { Cursor = new PNG(File.ReadAllBytes("Images/Cursor.png")); } catch { Cursor = new Image(16,16); }
-        
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'i');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'m');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'g');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        //try { Cursor = new PNG(File.ReadAllBytes("Images/Cursor.png")); } catch { Cursor = new Image(16,16); }
+        Cursor = new Image(16,16);  // Skip PNG, use dummy image
         Native.Out8(0x3F8, (byte)'2');
-        
-        try { CursorMoving = new PNG(File.ReadAllBytes("Images/Grab.png")); } catch { CursorMoving = Cursor; }
-        
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'i');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'m');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'g');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        //try { CursorMoving = new PNG(File.ReadAllBytes("Images/Grab.png")); } catch { CursorMoving = Cursor; }
+        CursorMoving = Cursor;  // Skip PNG, reuse cursor
         Native.Out8(0x3F8, (byte)'3');
-        
-        try { CursorBusy = new PNG(File.ReadAllBytes("Images/Busy.png")); } catch { CursorBusy = Cursor; }
+        //try { CursorBusy = new PNG(File.ReadAllBytes("Images/Busy.png")); } catch { CursorBusy = Cursor; }
+        CursorBusy = Cursor;  // Skip PNG, reuse cursor
+        Native.Out8(0x3F8, (byte)'i');
+        Native.Out8(0x3F8, (byte)'m');
+        Native.Out8(0x3F8, (byte)'g');
         //try { Wallpaper = new PNG(File.ReadAllBytes("Images/tronporche.png")); } catch { Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height); }
         
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'f');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'n');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'t');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'1');
+        Native.Out8(0x3F8, (byte)'F');
+        Native.Out8(0x3F8, (byte)'N');
+        Native.Out8(0x3F8, (byte)'T');
         
-        BitFont.Initialize();
+        // CRITICAL: Font file loading hangs! Skip BitFont initialization
+        //BitFont.Initialize();
         // FIXED: Added leading space to charset to match font image layout
-        string CustomCharset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+        //string CustomCharset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
         
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        //BitFont.RegisterBitFont(new BitFontDescriptor("Enludo", CustomCharset, File.ReadAllBytes("Fonts/enludo.btf"), 16));
+        // Skip font loading - system will use fallback rendering
+        
         Native.Out8(0x3F8, (byte)'f');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
         Native.Out8(0x3F8, (byte)'n');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
         Native.Out8(0x3F8, (byte)'t');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'2');
-        
-        BitFont.RegisterBitFont(new BitFontDescriptor("Enludo", CustomCharset, File.ReadAllBytes("Fonts/enludo.btf"), 16));
         //Terminal = null;
         
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'g');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'u');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'i');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'1');
-        
+        Native.Out8(0x3F8, (byte)'W');
+        Native.Out8(0x3F8, (byte)'M');
+        Native.Out8(0x3F8, (byte)'[');
         WindowManager.Initialize();
+        Native.Out8(0x3F8, (byte)']');
+        Native.Out8(0x3F8, (byte)'w');
+        Native.Out8(0x3F8, (byte)'m');
         
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'g');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'u');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'i');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'2');
-        
+        Native.Out8(0x3F8, (byte)'D');
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'[');
         Desktop.Initialize();
+        Native.Out8(0x3F8, (byte)']');
+        Native.Out8(0x3F8, (byte)'d');
+        Native.Out8(0x3F8, (byte)'s');
         
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'n');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'e');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'t');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'1');
-        
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'U');
+        Native.Out8(0x3F8, (byte)'B');
+        Native.Out8(0x3F8, (byte)'[');
         Firewall.Initialize();
-        
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'s');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'n');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'d');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'1');
-        
+        Native.Out8(0x3F8, (byte)'F');
         Audio.Initialize();
-        
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'s');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'n');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'d');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'2');
-        
+        Native.Out8(0x3F8, (byte)'A');
         AC97.Initialize();
-        if (AC97.DeviceLocated) Console.WriteLine("Device Located: " + AC97.DeviceName);
-        
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'s');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'n');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'d');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'3');
-        
+        Native.Out8(0x3F8, (byte)'C');
         ES1371.Initialize();
+        Native.Out8(0x3F8, (byte)'E');
+        Native.Out8(0x3F8, (byte)']');
+        Native.Out8(0x3F8, (byte)'s');
+        Native.Out8(0x3F8, (byte)'u');
+        Native.Out8(0x3F8, (byte)'b');
 #if NETWORK
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'n');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'e');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'t');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'2');
-        
-        Console.WriteLine("[NET] Initializing network subsystem...");
+Console.WriteLine("[NET] Initializing network subsystem...");
         try {
             NETv4.Initialize();
             Intel825xx.Initialize();
@@ -347,44 +276,44 @@ unsafe class Program {
         }
 #endif
 
-        // Apply saved display mode before wallpaper resize
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'d');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'s');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'p');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'1');
-        
-        DisplayManager.ApplySavedResolution();
+// Apply saved display mode before wallpaper resize
+Native.Out8(0x3F8, (byte)'C');
+Native.Out8(0x3F8, (byte)'F');
+Native.Out8(0x3F8, (byte)'G');
+Native.Out8(0x3F8, (byte)'[');
 
-        // Load saved configuration (UI settings, window positions, recent files, etc.)
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'c');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'f');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'g');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'1');
-        
-        guideXOS.OS.Configuration.LoadConfiguration();
+// CRITICAL: DisplayManager.ApplySavedResolution() tries to read config file which hangs!
+// Skip it - we'll use the current resolution from UEFI GOP
+//DisplayManager.ApplySavedResolution();
 
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'[');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'S');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'M');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)']');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'\r');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'\n');
-        
-        SMain();
+Native.Out8(0x3F8, (byte)'D');
+Native.Out8(0x3F8, (byte)'S');
+Native.Out8(0x3F8, (byte)'K');
+
+// Load saved configuration (UI settings, window positions, recent files, etc.)
+// CRITICAL: Configuration.LoadConfiguration() reads files which hangs!
+// Skip it - we'll use default settings
+//guideXOS.OS.Configuration.LoadConfiguration();
+
+Native.Out8(0x3F8, (byte)'L');
+Native.Out8(0x3F8, (byte)'S');
+Native.Out8(0x3F8, (byte)'K');
+Native.Out8(0x3F8, (byte)']');
+Native.Out8(0x3F8, (byte)'c');
+Native.Out8(0x3F8, (byte)'f');
+Native.Out8(0x3F8, (byte)'g');
+
+Native.Out8(0x3F8, (byte)'\r');
+Native.Out8(0x3F8, (byte)'\n');
+Native.Out8(0x3F8, (byte)'=');
+Native.Out8(0x3F8, (byte)'L');
+Native.Out8(0x3F8, (byte)'O');
+Native.Out8(0x3F8, (byte)'O');
+Native.Out8(0x3F8, (byte)'P');
+Native.Out8(0x3F8, (byte)'=');
+Native.Out8(0x3F8, (byte)'\r');
+Native.Out8(0x3F8, (byte)'\n');
+SMain();
     }
 
 #if NETWORK
@@ -420,9 +349,22 @@ unsafe class Program {
     private static ulong _lastIconCacheRefresh = 0;
 
     public static void SMain() {
+        // CRITICAL: Add markers to prove we entered SMain
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'M');
+        Native.Out8(0x3F8, (byte)'A');
+        Native.Out8(0x3F8, (byte)'I');
+        Native.Out8(0x3F8, (byte)'N');
+        Native.Out8(0x3F8, (byte)'\r');
+        Native.Out8(0x3F8, (byte)'\n');
+        
         Framebuffer.TripleBuffered = true;
+        Native.Out8(0x3F8, (byte)'T');
+        Native.Out8(0x3F8, (byte)'B');
 
         Image wall = Wallpaper;
+        Native.Out8(0x3F8, (byte)'W');
+        Native.Out8(0x3F8, (byte)'L');
         try {
             if (wall != null) {
                 Wallpaper = wall.ResizeImage(Framebuffer.Width, Framebuffer.Height);

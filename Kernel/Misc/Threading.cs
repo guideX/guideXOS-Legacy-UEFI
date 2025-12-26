@@ -108,7 +108,17 @@ namespace guideXOS.Misc {
                 t.Start((int)SMP.ThisCPU);
             }
             Native.Sti();
-            Schedule_Next(); //start scheduling
+            // NOTE: Schedule_Next() moved to explicit StartScheduling() call
+            // to prevent thread switching during boot initialization
+            // Schedule_Next(); //start scheduling
+        }
+        
+        /// <summary>
+        /// Explicitly start thread scheduling.
+        /// Call this AFTER all kernel initialization is complete.
+        /// </summary>
+        public static void StartScheduling() {
+            Schedule_Next(); // Start scheduling threads
         }
 
         public static void Terminate() {

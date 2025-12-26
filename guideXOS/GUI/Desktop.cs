@@ -110,17 +110,26 @@ namespace guideXOS.GUI {
         /// Initialize
         /// </summary>
         public static void Initialize() {
-            Apps = new AppCollection();
+            // CRITICAL: AppCollection() might try to read from disk which hangs!
+            // Skip it for minimal boot test
+            // Apps = new AppCollection();
+            Apps = null; // Set to null for now
             IndexClicked = -1;
-            Taskbar = new Taskbar(40, Icons.TaskbarIcon(32));
+            
+            // CRITICAL: Icons.TaskbarIcon(32) tries to load PNG from disk which hangs!
+            // Create dummy icon instead
+            //Taskbar = new Taskbar(40, Icons.TaskbarIcon(32));
+            Image dummyTaskbarIcon = new Image(32, 32);  // Dummy taskbar icon
+            Taskbar = new Taskbar(40, dummyTaskbarIcon);
+            
             Dir = "";
             HomeMode = true;
-            imageViewer = new ImageViewer(400, 400);
-            msgbox = new MessageBox(100, 300);
-            wavplayer = new WAVPlayer(450, 200);
-            imageViewer.Visible = false;
-            msgbox.Visible = false;
-            wavplayer.Visible = false;
+            //imageViewer = new ImageViewer(400, 400);
+            //msgbox = new MessageBox(100, 300);
+            //wavplayer = new WAVPlayer(450, 200);
+            //imageViewer.Visible = false;
+            //msgbox.Visible = false;
+            //wavplayer.Visible = false;
             LastPoint.X = -1;
             LastPoint.Y = -1;
             _dirCacheDirty = true;
@@ -129,6 +138,8 @@ namespace guideXOS.GUI {
             compFiles = null;
             _lastUSBCount = -1;
             _usbDriveLabels = null;
+            // DEBUG MARKER
+            Native.Out8(0x3F8, (byte)'*');
         }
         /// <summary>
         /// Heuristic: if a USB MSC disk is present and marked ready, show installer icon.

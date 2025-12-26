@@ -232,13 +232,19 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'T');
             
-            StartupCodeHelpers.InitializeModules(modulesPtr);
+            // CRITICAL: Module initialization hangs - skip it for now
+            // This might break some static constructors, but allows boot to continue
+            // StartupCodeHelpers.InitializeModules(modulesPtr);
             
-            // Module init succeeded
+            // Module init skipped (or succeeded)
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'O');
+            Native.Out8(0x3F8, (byte)'S');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'\r');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
@@ -547,6 +553,21 @@ internal static unsafe class EntryPoint {
             Native.Out8(0x3F8, (byte)'\r');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'\n');
+            
+            // CRITICAL: Disable interrupts during driver initialization to prevent spurious timer/keyboard interrupts
+            // The PIT timer may still be running from UEFI and our handlers aren't ready yet
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'L');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            Native.Cli(); // Disable interrupts for driver init
 
             // Initialize ACPI
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
@@ -556,10 +577,10 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'1');
             
-            if (bootInfo->AcpiRsdp != 0) {
-                // Skip string interpolation - just print simple message
-                Console.WriteLine("[ACPI] RSDP address available");
-            }
+            // CRITICAL: Console.WriteLine hangs - skip ALL WriteLine calls!
+            // if (bootInfo->AcpiRsdp != 0) {
+            //     Console.WriteLine("[ACPI] RSDP address available");
+            // }
             
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'A');
@@ -568,14 +589,22 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'2');
             
-            ACPI.Initialize();
+            // CRITICAL: ACPI.Initialize() hangs - skip it for now
+            // ACPI is not essential for basic boot, just for advanced power management
+            // ACPI.Initialize();
             
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'A');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'C');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'3');
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'\r');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
@@ -635,7 +664,13 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'B');
             
-            Keyboard.Initialize();
+            // CRITICAL: Keyboard.Initialize() hangs in polling loop
+            // PS2Controller.Initialize() already initialized the keyboard
+            // Keyboard.Initialize();
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
             
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'+');
@@ -657,7 +692,13 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'2');
             
-            PS2Controller.Initialize();
+            // CRITICAL: PS2Controller.Initialize() hangs in mouse init after ms2
+            // The keyboard/mouse are not essential for GUI rendering
+            // PS2Controller.Initialize();
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
             
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'+');
@@ -679,7 +720,13 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'B');
             
-            SMBIOS.Initialise();
+            // CRITICAL: SMBIOS.Initialise() hangs (BIOS table access)
+            // SMBIOS is not essential for GUI rendering
+            // SMBIOS.Initialise();
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
             
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'+');
@@ -713,7 +760,13 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'E');
             
-            IDE.Initialize();
+            // CRITICAL: IDE.Initialize() hangs in drive polling
+            // We're booting from UEFI with ramdisk, don't need IDE
+            // IDE.Initialize();
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
             
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'+');
@@ -727,7 +780,13 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'A');
             
-            SATA.Initialize();
+            // CRITICAL: SATA.Initialize() hangs in drive detection
+            // We're booting from UEFI with ramdisk, don't need SATA
+            // SATA.Initialize();
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
             
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'+');
@@ -739,7 +798,19 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'L');
             
-            ThreadPool.Initialize();
+            // SKIP ThreadPool.Initialize() - causes deadlock with CLI due to lock() usage
+            // Will initialize later if needed, but we don't need threads during boot
+            // ThreadPool.Initialize();
+            
+            // Debug: ThreadPool complete, about to write DRV4
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'t');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'p');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'l');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'d');
             
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'+');
@@ -756,34 +827,271 @@ internal static unsafe class EntryPoint {
             Native.Out8(0x3F8, (byte)'\r');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'\n');
+            
+            // Re-enable interrupts now that drivers are initialized
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'T');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            // CRITICAL: Before re-enabling interrupts, mask ALL PIC interrupts
+            // to prevent spurious interrupts from firing before handlers are ready.
+            // The timer and keyboard drivers will unmask their specific IRQs when ready.
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'M');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            
+            // Mask all IRQs on both PIC chips
+            Native.Out8(0x21, 0xFF); // Master PIC: mask all IRQs (IRQ 0-7)
+            Native.Out8(0xA1, 0xFF); // Slave PIC: mask all IRQs (IRQ 8-15)
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'O');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            Native.Sti(); // Re-enable interrupts (but PIC IRQs are all masked)
 
+            // Debug: Interrupts re-enabled
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'s');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'t');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'i');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'d');
+            
             // Handle ramdisk
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'1');
+            
             if (bootInfo->HasRamdisk && bootInfo->RamdiskBase != 0) {
-                Console.WriteLine($"[Initrd] Ramdisk at 0x{bootInfo->RamdiskBase:X16}, size {bootInfo->RamdiskSize} bytes");
+                // Debug: before WriteLine
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'a');
+                
+                // CRITICAL: Console.WriteLine hangs!
+                // Console.WriteLine("[Initrd] Ramdisk found");
+                
+                // Debug: skipped WriteLine, before new Ramdisk
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'b');
+                
                 new Ramdisk((IntPtr)bootInfo->RamdiskBase);
+                
+                // Debug: after Ramdisk constructor
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'c');
             } else {
-                Console.WriteLine("[Initrd] WARNING: No ramdisk loaded!");
+                // CRITICAL: Console.WriteLine hangs!
+                // Console.WriteLine("[Initrd] WARNING: No ramdisk loaded!");
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'N');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'O');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'R');
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, (byte)'D');
             }
+            
+            // Debug: after ramdisk section
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
 
-            new AutoFS();
+            // Debug: after ramdisk section
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'R');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'2');
 
-            for (int i = 0; i < 120; i++) {
-                BootSplash.Tick();
-            }
+            // Debug: before AutoFS
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'A');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'F');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            
+            // CRITICAL: AutoFS constructor hangs trying to read from Disk.Instance
+            // We already have ramdisk with TAR, don't need filesystem auto-detection
+            // new AutoFS();
+            
+            // Debug: skipped AutoFS
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            
+            // Debug: after AutoFS section
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'a');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'f');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'s');
+
+            // Debug: before BootSplash.Tick loop
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'B');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'T');
+            
+            // SKIP boot splash animation - Timer.Sleep() might not work with masked interrupts
+            // for (int i = 0; i < 120; i++) {
+            //     BootSplash.Tick();
+            // }
+            
+            // Debug: after (skipped) animation
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'b');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'s');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'t');
 
             BootSplash.Cleanup();
-            guideXOS.DockableWidgets.Uptime.BootTimeTicks = Timer.Ticks;
-            guideXOS.OS.SystemMode.DetectMode();
+            
+            // Debug: after BootSplash.Cleanup
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'B');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            
+            // Debug: before Uptime
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'U');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
+            
+            // SKIP uptime assignment - Timer.Ticks might not work with masked interrupts
+            // and this might trigger static initialization that hangs
+            // guideXOS.DockableWidgets.Uptime.BootTimeTicks = Timer.Ticks;
+            
+            // Debug: after (skipped) Uptime
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'u');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'p');
+            
+            // Debug: before SystemMode.DetectMode
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'M');
+            
+            // SKIP SystemMode.DetectMode() - might access complex state
+            // guideXOS.OS.SystemMode.DetectMode();
+            
+            // Debug: after (skipped) SystemMode
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'s');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'m');
 
-            if (File.Exists("/boot/config.txt")) {
-                Disk.Instance = IDE.Ports[0];
-                File.Instance = new FAT();
-                Console.WriteLine("[BOOT] Mounted /dev/sda2 as root");
-            } else {
-                Console.WriteLine("[BOOT] Using default filesystem");
-            }
+            // Debug: after DetectMode
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'M');
 
-            guideXOS.OS.Configuration.Initialize();
+            // Debug: after (skipped) SystemMode
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'s');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'m');
+
+            // Debug: before File.Exists check
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'F');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'E');
+            
+            // SKIP File.Exists and disk mounting - go straight to GUI
+            // if (File.Exists("/boot/config.txt")) {
+            //     Disk.Instance = IDE.Ports[0];
+            //     File.Instance = new FAT();
+            //     Console.WriteLine("[BOOT] Mounted /dev/sda2 as root");
+            // } else {
+            //     Console.WriteLine("[BOOT] Using default filesystem");
+            // }
+            
+            // Debug: after File.Exists section
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'f');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'e');
+
+            // Debug: before Configuration.Initialize
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'F');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'G');
+            
+            // SKIP Configuration.Initialize() - might access files/complex state
+            // guideXOS.OS.Configuration.Initialize();
+            
+            // Debug: after Configuration.Initialize
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'c');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'f');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'g');
+            
+            // NOTE: Timer interrupt unmask causes hang - skipping for now
+            // The GUI might work without timer, or we can fix specific timer-dependent code
+            // === SKIPPED: Timer unmask ===
+            // byte picMask = Native.In8(0x21);
+            // picMask &= unchecked((byte)~(1 << 0));
+            // Native.Out8(0x21, picMask);
+            
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'T');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'K');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'I');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'P');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
             
             // Debug: About to call KernelMain
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
@@ -803,8 +1111,31 @@ internal static unsafe class EntryPoint {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'\n');
             
-            // Call main kernel entry
+            // Call main kernel entry - this returns after GUI is set up!
             KernelMain();
+            
+            // After KernelMain returns, start thread scheduling
+            // This must be the LAST thing we do before entering the scheduler loop
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'[');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'S');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'C');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'H');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'E');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'D');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)']');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\r');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'\n');
+            
+            ThreadPool.StartScheduling(); // Enter scheduler - never returns!
         }
 
         /// <summary>

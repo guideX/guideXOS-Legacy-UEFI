@@ -47,12 +47,38 @@ namespace guideXOS.GUI {
         /// Initialize
         /// </summary>
         public static void Initialize() {
+            // Debug marker before list creation
+            Native.Out8(0x3F8, (byte)'1');
+            
             Windows = new List<Window>();
-            CloseButton = new PNG(File.ReadAllBytes("Images/Close.png"));
-            MinimizeButton = new PNG(File.ReadAllBytes("Images/BlueVelvet/16/down.png"));
-            MaximizeButton = new PNG(File.ReadAllBytes("Images/BlueVelvet/16/image.png"));
+            
+            // Debug marker after list creation
+            Native.Out8(0x3F8, (byte)'2');
+            
+            // CRITICAL: PNG loading from File.ReadAllBytes() hangs!
+            // Create dummy images instead of loading PNGs
+            //CloseButton = new PNG(File.ReadAllBytes("Images/Close.png"));
+            CloseButton = new Image(16, 16);  // Dummy close button
+            
+            Native.Out8(0x3F8, (byte)'3');
+            
+            //MinimizeButton = new PNG(File.ReadAllBytes("Images/BlueVelvet/16/down.png"));
+            MinimizeButton = new Image(16, 16);  // Dummy minimize button
+            
+            Native.Out8(0x3F8, (byte)'4');
+            
+            //MaximizeButton = new PNG(File.ReadAllBytes("Images/BlueVelvet/16/image.png"));
+            MaximizeButton = new Image(16, 16);  // Dummy maximize button
+            
+            Native.Out8(0x3F8, (byte)'5');
+            
             try {
-                PNG robotoBlack = new PNG(File.ReadAllBytes("Fonts/roboto/roboto_12pt_regular.png"));
+                // CRITICAL: Font PNG loading hangs! Create dummy font
+                //PNG robotoBlack = new PNG(File.ReadAllBytes("Fonts/roboto/roboto_12pt_regular.png"));
+                Image robotoBlack = new Image(260, 160);  // Dummy font image
+                
+                Native.Out8(0x3F8, (byte)'6');
+                
                 // FIXED: Charset must match ASCII order of the font image - percent sign must be at correct position
                 string charset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
                 font = new IFont(
@@ -64,11 +90,16 @@ namespace guideXOS.GUI {
                     -5
                 );
                 
+                Native.Out8(0x3F8, (byte)'7');
+                
                 // Diagnostic output
                 //font.DiagnoseFont();
             } catch {
-                Console.WriteLine("[FONT] ERROR: Could not load quickening.png!");
-                Console.WriteLine("[FONT] Falling back to placeholder font");
+                // SKIP Console.WriteLine - it hangs!
+                //Console.WriteLine("[FONT] ERROR: Could not load quickening.png!");
+                //Console.WriteLine("[FONT] Falling back to placeholder font");
+                
+                Native.Out8(0x3F8, (byte)'E');
                 
                 // Fallback to simple white blocks
                 Image simpleFontImg = new Image(260, 160); // 13 chars * 20px width, 8 rows * 20px height
@@ -86,11 +117,18 @@ namespace guideXOS.GUI {
                     11,
                     -3
                 );
+                
+                Native.Out8(0x3F8, (byte)'F');
             }
+            
+            Native.Out8(0x3F8, (byte)'8');
             
             MouseHandled = false;
             _pending = new List<PendingWindow>();
             _cpuEpochTick = 0;
+            
+            // Debug marker at end
+            Native.Out8(0x3F8, (byte)'9');
         }
         /// <summary>
         /// Enable performance tracking

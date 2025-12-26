@@ -150,8 +150,18 @@ namespace guideXOS.Kernel.Drivers {
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'5');
 
-            // Skip Console.WriteLine with device count - use simple message
-            Console.WriteLine("[PCI] Devices enumerated");
+            // CRITICAL: Console.WriteLine hangs!
+            // Console.WriteLine("[PCI] Devices enumerated");
+            
+            // Debug: PCI done
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'p');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'c');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'i');
+            while ((Native.In8(0x3FD) & 0x20) == 0) { }
+            Native.Out8(0x3F8, (byte)'d');
         }
 
         public static void CheckBus(ushort Bus) {
