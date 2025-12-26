@@ -36,6 +36,7 @@ Forbidden:
 #include "uefi_shim.h"         // UEFI shims for freestanding environment
 #include "debug_helpers.h"     // Post-ExitBootServices debugging
 #include "paging.h"            // minimal identity page tables
+#include "boot_splash.h"       // boot splash screen
 
 // MSVC intrinsics
 extern "C" void __halt(void);
@@ -361,6 +362,19 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     if (EFI_ERROR(status)) {
         Print(L"Failed to locate GOP\n");
         return status;
+    }
+
+    // === DRAW BOOT SPLASH IMMEDIATELY ===
+    // This replaces the TianoCore logo as soon as we have GOP access
+    if (GOP->Mode->FrameBufferBase != 0) {
+        guideXOS::boot::BootSplash::DrawSplash(
+            (EFI_PHYSICAL_ADDRESS)GOP->Mode->FrameBufferBase,
+            GOP->Mode->Info->HorizontalResolution,
+            GOP->Mode->Info->VerticalResolution,
+            GOP->Mode->Info->PixelsPerScanLine * 4u
+        );
+        // Small delay so splash is visible
+        SystemTable->BootServices->Stall(300000); // 300ms
     }
 
     // --- Load Kernel (your existing loader) ---
@@ -784,21 +798,29 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
     Print(L"Page tables built at PML4: %p\n", (VOID*)(UINTN)pt.Pml4Phys);
 
-    // === PRE-EXIT BOOT SERVICES VALIDATION ===
-    // Draw a visible marker on framebuffer BEFORE ExitBootServices
-    // This helps diagnose if we crash during/after EBS
-    if (v1BootInfo->FramebufferBase != 0) {
-        volatile uint32_t* fb = (volatile uint32_t*)(UINTN)v1BootInfo->FramebufferBase;
-        uint32_t pitch = v1BootInfo->FramebufferPitch / 4;
-        // Draw a green square at top-left before EBS
-        for (uint32_t y = 0; y < 30; y++) {
-            for (uint32_t x = 0; x < 30; x++) {
-                fb[y * pitch + x] = 0x0000FF00; // Green = pre-EBS
-            }
-        }
-    }
+    // === PRE-EXIT BOOT SERVICES ===
+    // Boot splash is already displayed - skip debug markers that would overwrite it
+    Print(L"About to exit boot services...\n");
 
-    Print(L"Pre-EBS marker drawn (green square top-left)\n");
+    // === DRAW BOOT SPLASH ===
+    // Show custom guideXOS boot splash IMMEDIATELY - covers entire screen
+    // This will replace the TianoCore logo with guideXOS branding
+    if (v1BootInfo->FramebufferBase != 0 && v1BootInfo->FramebufferWidth != 0 && v1BootInfo->FramebufferHeight != 0) {
+        Print(L"Drawing boot splash screen...\n");
+        guideXOS::boot::BootSplash::DrawSplash(
+            v1BootInfo->FramebufferBase,
+            v1BootInfo->FramebufferWidth,
+            v1BootInfo->FramebufferHeight,
+            v1BootInfo->FramebufferPitch
+        );
+        Print(L"Boot splash complete!\n");
+        
+        // Wait a moment so user can see the splash (500ms)
+        // Use UEFI Stall service (microseconds)
+        SystemTable->BootServices->Stall(500000); // 500ms
+    } else {
+        Print(L"Framebuffer not available for boot splash\n");
+    }
 
     // Now we can safely exit boot services.
     EFI_MEMORY_DESCRIPTOR* memoryMap      = (EFI_MEMORY_DESCRIPTOR*)(UINTN)preMemMapPhys;

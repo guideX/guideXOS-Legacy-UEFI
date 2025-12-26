@@ -32,9 +32,9 @@ namespace guideXOS.GUI {
         
         // ===== VISUAL EFFECTS SETTINGS =====
         // Major visual effects
-        public static bool EnableBlurredTitleBars = true; // enable blur effect on window title bars
-        public static bool EnableTransparentWindows = true; // enable transparency effects on windows
-        public static bool EnableWindowGlow = true; // enable glow/shadow behind windows
+        public static bool EnableBlurredTitleBars = false; // enable blur effect on window title bars
+        public static bool EnableTransparentWindows = false; // enable transparency effects on windows
+        public static bool EnableWindowGlow = false; // enable glow/shadow behind windows
         public static bool EnableRoundedCorners = true; // enable rounded corners on windows (causes massive memory leak)
         public static bool EnableButtonHoverEffects = true; // enable hover glow on title bar buttons
         public static bool EnableResizeGrip = true; // enable resize grip visual in corner

@@ -247,6 +247,10 @@ namespace guideXOS.GUI {
         /// <param name="audioIcon"></param>
         /// <param name="iconSize"></param>
         public static void Update(Image documentIcon, Image folderIcon, Image imageIcon, Image audioIcon, int iconSize) {
+            // MINIMAL BOOT: Skip everything except taskbar draw
+            // Comment out all desktop icon rendering, USB detection, file browsing, etc.
+            // This is a minimal boot mode to test if the desktop can appear at all
+            #if false  // MINIMAL_BOOT - set to true to enable full desktop
             SetIconSize(iconSize);
             var docIcon = documentIcon;
             var names = GetDirectoryEntries();
@@ -445,6 +449,15 @@ namespace guideXOS.GUI {
                     }
                 }
             }
+            #endif // MINIMAL_BOOT
+            
+            // MINIMAL BOOT: Only draw taskbar and handle widget container
+            // Handle widget container auto-hide (must run even when hidden)
+            if (Program.WidgetsContainer != null) {
+                Program.WidgetsContainer.UpdateAutoHide();
+            }
+            // Draw taskbar
+            Taskbar.Draw();
         }
         /// <summary>
         /// Last Point

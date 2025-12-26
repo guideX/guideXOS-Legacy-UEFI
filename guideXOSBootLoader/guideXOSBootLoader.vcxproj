@@ -83,6 +83,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="boot_splash.cpp" />
     <ClCompile Include="elf.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="fb_console.cpp" />
@@ -100,6 +101,7 @@
   <ItemGroup>
     <ClInclude Include="bootinfo.h" />
     <ClInclude Include="boot_diagnostics.h" />
+    <ClInclude Include="boot_splash.h" />
     <ClInclude Include="debug_helpers.h" />
     <ClInclude Include="elf.h" />
     <ClInclude Include="acpi.h" />
