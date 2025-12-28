@@ -228,18 +228,12 @@ namespace guideXOS.Misc {
             BootConsole.WriteLine("[PCI] INIT");
             PCI.Initialize();
 
-            // CRITICAL: IDE.Initialize() hangs in drive polling
-            // We're booting from UEFI with ramdisk, don't need IDE
-            // IDE.Initialize();
-            // CRITICAL: SATA.Initialize() hangs in drive detection
-            // We're booting from UEFI with ramdisk, don't need SATA
-            // SATA.Initialize();
-            // SKIP ThreadPool.Initialize() - causes deadlock with CLI due to lock() usage
-            // Will initialize later if needed, but we don't need threads during boot
-            // ThreadPool.Initialize();
-            // CRITICAL: Before re-enabling interrupts, mask ALL PIC interrupts
-            // to prevent spurious interrupt from firing before handlers are ready.
-            // The timer and keyboard drivers will unmask their specific IRQs when ready.
+            if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
+                IDE.Initialize();
+                SATA.Initialize();
+                ThreadPool.Initialize();
+            }
+            
             Native.Out8(0x21, 0xFF); // Master PIC: mask all IRQs (IRQ 0-7)
             Native.Out8(0xA1, 0xFF); // Slave PIC: mask all IRQs (IRQ 8-15)
 
@@ -263,6 +257,7 @@ namespace guideXOS.Misc {
             // Assembly-only marker before enabling interrupts
             SerialDebugMarker();
             Native.Sti();
+            
             // Assembly-only marker after STI
             SerialDebugMarker();
 
