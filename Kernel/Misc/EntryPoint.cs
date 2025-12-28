@@ -288,21 +288,29 @@ namespace guideXOS.Misc {
             //BootConsole.WriteLine("[STI_INIT]");
             // Native.Sti(); // Re-enable interrupts (timer enabled)
             //BootConsole.WriteLine("[CHECK_RAMDISK]");
+            
+            // UEFI: Initialize ramdisk and filesystem for File API support (PNG loading, etc.)
             if (bootInfo->HasRamdisk && bootInfo->RamdiskBase != 0) {
-                /*
-                // CRITICAL: BootConsole.WriteLine hangs!
-                // BootConsole.WriteLine("[Initrd] Ramdisk found");
-                // Debug: skipped WriteLine, before new Ramdisk
-                */
-                //new Ramdisk((IntPtr)bootInfo->RamdiskBase);
-                // Debug: after Ramdisk constructor
+                BootConsole.WriteLine("[Initrd] Initializing Ramdisk");
+                try {
+                    // CRITICAL: Set Disk.Instance BEFORE filesystem init
+                    Disk.Instance = new Ramdisk((IntPtr)bootInfo->RamdiskBase);
+                    BootConsole.WriteLine("[Initrd] Ramdisk initialized");
+                    
+                    // UEFI ramdisk is always TAR format - skip AutoFS detection to avoid hangs
+                    BootConsole.WriteLine("[FS] Mounting TarFS");
+                    try {
+                        File.Instance = new TarFS();
+                        BootConsole.WriteLine("[FS] TarFS mounted");
+                    } catch {
+                        BootConsole.WriteLine("[FS] WARNING: TarFS mount failed");
+                    }
+                } catch {
+                    BootConsole.WriteLine("[Initrd] WARNING: Ramdisk initialization failed");
+                }
             } else {
-                // CRITICAL: BootConsole.WriteLine hangs!
-                // BootConsole.WriteLine("[Initrd] WARNING: No ramdisk loaded!");
+                BootConsole.WriteLine("[Initrd] WARNING: No ramdisk loaded!");
             }
-            // CRITICAL: AutoFS constructor hangs trying to read from Disk.Instance
-            // We already have ramdisk with TAR, don't need filesystem auto-detection
-            // new AutoFS();
             // SKIP boot splash animation - Timer.Sleep() might not work with masked interrupts
             // for (int i = 0; i < 120; i++) {
             //     BootSplash.Tick();

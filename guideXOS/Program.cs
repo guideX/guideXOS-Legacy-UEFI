@@ -94,36 +94,36 @@ unsafe class Program {
 
         //Sized width to 512
         BootConsole.WriteLine("[CURSOR] Creating cursor images");
+        // UEFI mode now has working filesystem - try loading PNG cursors
+        try { 
+            Cursor = new PNG(File.ReadAllBytes("Images/Cursor.png")); 
+            BootConsole.WriteLine("[CURSOR] Loaded Cursor.png");
+        } catch { 
+            Cursor = new Image(16, 16);
+            BootConsole.WriteLine("[CURSOR] Using fallback cursor");
+        }
+        
+        try { 
+            CursorMoving = new PNG(File.ReadAllBytes("Images/Grab.png")); 
+            BootConsole.WriteLine("[CURSOR] Loaded Grab.png");
+        } catch { 
+            CursorMoving = Cursor; 
+            BootConsole.WriteLine("[CURSOR] Using fallback grab cursor");
+        }
+        
+        try { 
+            CursorBusy = new PNG(File.ReadAllBytes("Images/Busy.png")); 
+            BootConsole.WriteLine("[CURSOR] Loaded Busy.png");
+        } catch { 
+            CursorBusy = Cursor; 
+            BootConsole.WriteLine("[CURSOR] Using fallback busy cursor");
+        }
+        
+        // Only initialize BitFont in Legacy mode (requires fonts)
         if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-            try { Cursor = new PNG(File.ReadAllBytes("Images/Cursor.png")); } catch { Cursor = new Image(16, 16); }
-            try { CursorMoving = new PNG(File.ReadAllBytes("Images/Grab.png")); } catch { CursorMoving = Cursor; }
-            try { CursorBusy = new PNG(File.ReadAllBytes("Images/Busy.png")); } catch { CursorBusy = Cursor; }
-            //try { Wallpaper = new PNG(File.ReadAllBytes("Images/tronporche.png")); } catch { Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height); }
             BitFont.Initialize();
-            // FIXED: Added leading space to charset to match font image layout
             string CustomCharset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
             BitFont.RegisterBitFont(new BitFontDescriptor("Enludo", CustomCharset, File.ReadAllBytes("Fonts/enludo.btf"), 16));
-        } else {
-            // UEFI mode: Create simple cursor images
-            BootConsole.WriteLine("[UEFI] Creating cursor images");
-            Cursor = new Image(16, 16);
-            CursorMoving = new Image(16, 16);
-            CursorBusy = new Image(16, 16);
-
-            // Fill cursors with white pixels to make them visible
-            for (int y = 0; y < 16; y++) {
-                for (int x = 0; x < 16; x++) {
-                    // Create arrow-shaped cursor
-                    if (x + y < 16) {
-                        Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF);
-                    }
-                }
-            }
-            // Copy to moving and busy cursors
-            for (int i = 0; i < 16 * 16; i++) {
-                CursorMoving.RawData[i] = Cursor.RawData[i];
-                CursorBusy.RawData[i] = Cursor.RawData[i];
-            }
         }
 
         //Terminal = null;
@@ -593,14 +593,30 @@ unsafe class Program {
                         BackgroundRotationManager.DrawBackground();
                     } else {
                         // UEFI mode: Just draw the wallpaper directly
+                        if (frameCounter == 1) {
+                            BootConsole.WriteLine("[RENDER] Step 8a: Check wallpaper");
+                        }
+                        
                         if (Wallpaper != null) {
+                            if (frameCounter == 1) {
+                                BootConsole.WriteLine("[RENDER] Step 8b: About to draw wallpaper");
+                            }
                             Framebuffer.Graphics.DrawImage(0, 0, Wallpaper);
+                            if (frameCounter == 1) {
+                                BootConsole.WriteLine("[RENDER] Step 8c: Wallpaper drawn");
+                            }
                         } else {
+                            if (frameCounter == 1) {
+                                BootConsole.WriteLine("[RENDER] Step 8d: Using solid color");
+                            }
                             Framebuffer.Graphics.Clear(0xFF0D7D77); // Teal background
                         }
                     }
                 } catch {
                     // Draw solid color fallback
+                    if (frameCounter == 1) {
+                        BootConsole.WriteLine("[RENDER] Step 8e: Wallpaper error, using fallback");
+                    }
                     try {
                         Framebuffer.Graphics.Clear(0xFF0D7D77);
                     } catch { }
