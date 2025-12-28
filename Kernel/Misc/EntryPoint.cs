@@ -293,18 +293,68 @@ namespace guideXOS.Misc {
             if (bootInfo->HasRamdisk && bootInfo->RamdiskBase != 0) {
                 BootConsole.WriteLine("[Initrd] Initializing Ramdisk");
                 
+                // Debug: Print ramdisk address
+                ulong rdAddr = bootInfo->RamdiskBase;
+                Native.Out8(0x3F8, (byte)'R');
+                Native.Out8(0x3F8, (byte)'D');
+                Native.Out8(0x3F8, (byte)'@');
+                for (int shift = 60; shift >= 0; shift -= 4) {
+                    int nibble = (int)((rdAddr >> shift) & 0xF);
+                    char hexChar = (char)(nibble < 10 ? '0' + nibble : 'A' + nibble - 10);
+                    Native.Out8(0x3F8, (byte)hexChar);
+                }
+                Native.Out8(0x3F8, (byte)'\n');
+                
+                // CRITICAL DEBUG: Read first 16 bytes directly from bootInfo->RamdiskBase
+                // This tests if the memory is correctly mapped BEFORE Ramdisk class is created
+                byte* directPtr = (byte*)rdAddr;
+                Native.Out8(0x3F8, (byte)'D');
+                Native.Out8(0x3F8, (byte)'I');
+                Native.Out8(0x3F8, (byte)'R');
+                Native.Out8(0x3F8, (byte)':');
+                for (int i = 0; i < 16; i++) {
+                    byte b = directPtr[i];
+                    char hi = (char)(((b >> 4) & 0xF) < 10 ? '0' + ((b >> 4) & 0xF) : 'A' + (((b >> 4) & 0xF) - 10));
+                    char lo = (char)((b & 0xF) < 10 ? '0' + (b & 0xF) : 'A' + ((b & 0xF) - 10));
+                    Native.Out8(0x3F8, (byte)hi);
+                    Native.Out8(0x3F8, (byte)lo);
+                }
+                Native.Out8(0x3F8, (byte)'\n');
+                
+                // Check if it's RDSK
+                if (directPtr[0] == (byte)'R' && directPtr[1] == (byte)'D' && 
+                    directPtr[2] == (byte)'S' && directPtr[3] == (byte)'K') {
+                    BootConsole.WriteLine("[Initrd] RDSK magic found directly!");
+                } else {
+                    BootConsole.WriteLine("[Initrd] WARNING: No RDSK magic at base address!");
+                    // Try printing what we see as ASCII
+                    Native.Out8(0x3F8, (byte)'A');
+                    Native.Out8(0x3F8, (byte)'S');
+                    Native.Out8(0x3F8, (byte)'C');
+                    Native.Out8(0x3F8, (byte)':');
+                    for (int i = 0; i < 4; i++) {
+                        byte b = directPtr[i];
+                        if (b >= 32 && b < 127) {
+                            Native.Out8(0x3F8, b);
+                        } else {
+                            Native.Out8(0x3F8, (byte)'.');
+                        }
+                    }
+                    Native.Out8(0x3F8, (byte)'\n');
+                }
+                
                 try {
                     // CRITICAL: Set Disk.Instance BEFORE filesystem init
                     Disk.Instance = new Ramdisk((IntPtr)bootInfo->RamdiskBase);
                     BootConsole.WriteLine("[Initrd] Ramdisk initialized");
                     
-                    // UEFI ramdisk is always TAR format - skip AutoFS detection to avoid hangs
-                    BootConsole.WriteLine("[FS] Mounting TarFS");
+                    // UEFI ramdisk uses custom RDSK format (not TAR)
+                    BootConsole.WriteLine("[FS] Mounting RdskFS");
                     try {
-                        File.Instance = new TarFS();
-                        BootConsole.WriteLine("[FS] TarFS mounted");
+                        File.Instance = new RdskFS();
+                        BootConsole.WriteLine("[FS] RdskFS mounted");
                     } catch {
-                        BootConsole.WriteLine("[FS] WARNING: TarFS mount failed");
+                        BootConsole.WriteLine("[FS] WARNING: RdskFS mount failed");
                     }
                 } catch {
                     BootConsole.WriteLine("[Initrd] WARNING: Ramdisk initialization failed");

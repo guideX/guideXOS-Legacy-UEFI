@@ -54,6 +54,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)FS\FileSystem.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)FS\MiniRamFs.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)FS\NTFS.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FS\RdskFS.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)FS\TarFS.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Graph\Graphics.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Graph\VMWareSVGAIIGraphics.cs" />
