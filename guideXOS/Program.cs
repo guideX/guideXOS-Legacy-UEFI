@@ -95,19 +95,13 @@ unsafe class Program {
         //Sized width to 512
         BootConsole.WriteLine("[CURSOR] Creating cursor images");
         
-        // Try to load PNG cursors from filesystem (works in both Legacy and UEFI with cached TarFS)
-        BootConsole.WriteLine("[CURSOR] Loading PNG cursors from filesystem");
-        
-        try { 
-            BootConsole.WriteLine("[CURSOR] Loading Images/Cursor.png");
-            byte[] cursorData = File.ReadAllBytes("Images/Cursor.png");
-            Cursor = new PNG(cursorData);
-            cursorData.Dispose();
-            BootConsole.WriteLine("[CURSOR] Loaded Cursor.png successfully");
-        } catch { 
-            BootConsole.WriteLine("[CURSOR] Failed to load Cursor.png, using fallback");
+        // CRITICAL: Check if File.Instance is available before trying to load cursors
+        BootConsole.WriteLine("[CURSOR] Checking File.Instance");
+        if (File.Instance == null) {
+            BootConsole.WriteLine("[CURSOR] File.Instance is NULL - using fallback cursors");
+            
+            // Create simple fallback cursors
             Cursor = new Image(16, 16);
-            // Fill with white arrow
             for (int y = 0; y < 16; y++) {
                 for (int x = 0; x < 16; x++) {
                     if (x + y < 16) {
@@ -115,28 +109,78 @@ unsafe class Program {
                     }
                 }
             }
-        }
-        
-        try { 
-            BootConsole.WriteLine("[CURSOR] Loading Images/Grab.png");
-            byte[] grabData = File.ReadAllBytes("Images/Grab.png");
-            CursorMoving = new PNG(grabData);
-            grabData.Dispose();
-            BootConsole.WriteLine("[CURSOR] Loaded Grab.png successfully");
-        } catch { 
+            
             CursorMoving = Cursor;
-            BootConsole.WriteLine("[CURSOR] Failed to load Grab.png, using fallback");
-        }
-        
-        try { 
-            BootConsole.WriteLine("[CURSOR] Loading Images/Busy.png");
-            byte[] busyData = File.ReadAllBytes("Images/Busy.png");
-            CursorBusy = new PNG(busyData);
-            busyData.Dispose();
-            BootConsole.WriteLine("[CURSOR] Loaded Busy.png successfully");
-        } catch { 
             CursorBusy = Cursor;
-            BootConsole.WriteLine("[CURSOR] Failed to load Busy.png, using fallback");
+            
+            BootConsole.WriteLine("[CURSOR] Fallback cursors created");
+        } else {
+            // Try to load PNG cursors from filesystem (works in both Legacy and UEFI with cached TarFS)
+            BootConsole.WriteLine("[CURSOR] Loading PNG cursors from filesystem");
+            
+            try { 
+                BootConsole.WriteLine("[CURSOR] Loading Images/Cursor.png");
+                BootConsole.WriteLine("[CURSOR] About to call File.ReadAllBytes");
+                
+                byte[] cursorData = null;
+                try {
+                    cursorData = File.ReadAllBytes("Images/Cursor.png");
+                    BootConsole.WriteLine("[CURSOR] File.ReadAllBytes returned");
+                } catch {
+                    BootConsole.WriteLine("[CURSOR] EXCEPTION in File.ReadAllBytes call!");
+                }
+                
+                if (cursorData != null) {
+                    BootConsole.WriteLine("[CURSOR] Cursor data loaded, creating PNG");
+                    Cursor = new PNG(cursorData);
+                    cursorData.Dispose();
+                    BootConsole.WriteLine("[CURSOR] Loaded Cursor.png successfully");
+                } else {
+                    BootConsole.WriteLine("[CURSOR] Cursor data is null - using fallback");
+                    // Use fallback cursor
+                    Cursor = new Image(16, 16);
+                    for (int y = 0; y < 16; y++) {
+                        for (int x = 0; x < 16; x++) {
+                            if (x + y < 16) {
+                                Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF);
+                            }
+                        }
+                    }
+                }
+            } catch { 
+                BootConsole.WriteLine("[CURSOR] Failed to load Cursor.png, using fallback");
+                Cursor = new Image(16, 16);
+                // Fill with white arrow
+                for (int y = 0; y < 16; y++) {
+                    for (int x = 0; x < 16; x++) {
+                        if (x + y < 16) {
+                            Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF);
+                        }
+                    }
+                }
+            }
+            
+            try { 
+                BootConsole.WriteLine("[CURSOR] Loading Images/Grab.png");
+                byte[] grabData = File.ReadAllBytes("Images/Grab.png");
+                CursorMoving = new PNG(grabData);
+                grabData.Dispose();
+                BootConsole.WriteLine("[CURSOR] Loaded Grab.png successfully");
+            } catch { 
+                CursorMoving = Cursor;
+                BootConsole.WriteLine("[CURSOR] Failed to load Grab.png, using fallback");
+            }
+            
+            try { 
+                BootConsole.WriteLine("[CURSOR] Loading Images/Busy.png");
+                byte[] busyData = File.ReadAllBytes("Images/Busy.png");
+                CursorBusy = new PNG(busyData);
+                busyData.Dispose();
+                BootConsole.WriteLine("[CURSOR] Loaded Busy.png successfully");
+            } catch { 
+                CursorBusy = Cursor;
+                BootConsole.WriteLine("[CURSOR] Failed to load Busy.png, using fallback");
+            }
         }
         
         BootConsole.WriteLine("[CURSOR] All cursors created");

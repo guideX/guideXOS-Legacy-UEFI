@@ -1,4 +1,5 @@
-﻿using guideXOS.Kernel.Helpers;
+﻿using guideXOS.Kernel.Drivers;
+using guideXOS.Kernel.Helpers;
 using guideXOS.Misc;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -8,6 +9,7 @@ namespace guideXOS.FS {
     /// </summary>
     internal unsafe class TarFS : FileSystem {
         private Disk _disk;
+        private Ramdisk _ramdisk; // WORKAROUND: Direct reference to bypass broken RTTI
         
         // OPTIMIZATION: Use simple array instead of List to avoid allocation issues
         private TarFileEntry[] _fileCache;
@@ -45,6 +47,24 @@ namespace guideXOS.FS {
             
             BootConsole.WriteLine("[TarFS] About to get Disk.Instance");
             _disk = Disk.Instance;
+            
+            // WORKAROUND: Try to get Ramdisk directly since RTTI is broken
+            try {
+                _ramdisk = Disk.Instance as Ramdisk;
+                if (_ramdisk != null) {
+                    BootConsole.WriteLine("[TarFS] Got Ramdisk reference via cast");
+                } else {
+                    BootConsole.WriteLine("[TarFS] Cast to Ramdisk failed, will try unsafe cast");
+                    // UNSAFE: Force cast through pointer
+                    _ramdisk = Ramdisk.Instance;
+                    if (_ramdisk != null) {
+                        BootConsole.WriteLine("[TarFS] Got Ramdisk via Instance");
+                    }
+                }
+            } catch {
+                BootConsole.WriteLine("[TarFS] Exception getting Ramdisk");
+            }
+            
             BootConsole.WriteLine("[TarFS] Disk.Instance retrieved");
             
             // WORKAROUND: Don't call InitializeFileCache - just mark as initialized
@@ -309,7 +329,15 @@ namespace guideXOS.FS {
         /// <param name="Name"></param>
         /// <returns></returns>
         public override byte[] ReadAllBytes(string Name) {
-            BootConsole.WriteLine("[TarFS] ReadAllBytes called for: " + Name);
+            // CRITICAL: Avoid string concatenation in first line - might cause stack issues
+            BootConsole.WriteLine("[TarFS] ReadAllBytes called");
+            
+            if (Name == null) {
+                BootConsole.WriteLine("[TarFS] ERROR: Name is null!");
+                return null;
+            }
+            
+            BootConsole.WriteLine("[TarFS] Name parameter OK");
             
             // Normalize path (remove leading slash if present)
             string searchPath = Name;
@@ -317,7 +345,7 @@ namespace guideXOS.FS {
                 searchPath = Name.Substring(1);
             }
             
-            BootConsole.WriteLine("[TarFS] Searching for: " + searchPath);
+            BootConsole.WriteLine("[TarFS] Path normalized");
             
             // Allocate header buffer on heap
             byte* headerBuffer = (byte*)Allocator.Allocate(512);
@@ -326,44 +354,54 @@ namespace guideXOS.FS {
                 return null;
             }
             
+            BootConsole.WriteLine("[TarFS] Header buffer allocated");
+            
             posix_tar_header* hdr = (posix_tar_header*)headerBuffer;
             ulong sec = 0;
             int entryCount = 0;
             
-            BootConsole.WriteLine("[TarFS] Starting TAR scan");
+            BootConsole.WriteLine("[TarFS] Starting scan");
+            
+            // WORKAROUND: Use direct Ramdisk reference since RTTI/casting is broken
+            if (_ramdisk != null) {
+                BootConsole.WriteLine("[TarFS] Using direct _ramdisk reference");
+            } else {
+                BootConsole.WriteLine("[TarFS] WARNING: No direct ramdisk reference!");
+            }
             
             // Scan TAR archive to find file
             while (true) {
-                // Read header
-                if (!_disk.Read(sec, 1, (byte*)hdr)) {
-                    BootConsole.WriteLine("[TarFS] Disk read failed at sector " + sec.ToString());
-                    break;
+                // Read header - use direct ramdisk reference if available
+                bool readSuccess = false;
+                if (_ramdisk != null) {
+                    readSuccess = _ramdisk.Read(sec, 1, (byte*)hdr);
+                } else {
+                    readSuccess = _disk.Read(sec, 1, (byte*)hdr);
                 }
                 
-                // DEBUG: Show first few bytes of header
-                if (sec == 0) {
-                    BootConsole.WriteLine("[TarFS] First header bytes (ASCII):");
-                    BootConsole.Write("  ");
-                    for (int i = 0; i < 16; i++) {
-                        byte b = ((byte*)hdr)[i];
-                        if (b >= 32 && b < 127) {
-                            // Can't use Write(char) directly, so write the byte as a simple marker
-                            BootConsole.Write(b >= 65 && b <= 90 ? "A" : b >= 97 && b <= 122 ? "a" : "x");
-                        } else {
-                            BootConsole.Write(".");
-                        }
-                    }
-                    BootConsole.WriteLine("");
+                if (!readSuccess) {
+                    BootConsole.WriteLine("[TarFS] Read failed");
+                    break;
                 }
                 
                 // Check for end of archive
                 if (hdr->name[0] == 0) {
-                    BootConsole.WriteLine("[TarFS] End of archive at sector " + sec.ToString() + " after " + entryCount.ToString() + " entries");
+                    // Reached end without finding file
+                    BootConsole.WriteLine("[TarFS] End of archive reached");
                     break;
                 }
                 
                 entryCount++;
                 
+                // DEBUG: Show first entry name to verify TAR is readable
+                if (entryCount == 1) {
+                    BootConsole.WriteLine("[TarFS] First entry name bytes:");
+                    for (int i = 0; i < 20 && i < 100; i++) {
+                        if (hdr->name[i] == 0) break;
+                        // Just log that we have data
+                    }
+                    BootConsole.WriteLine("[TarFS] First entry has data");
+                }
                 
                 sec++; // Move past header
                 
@@ -383,7 +421,7 @@ namespace guideXOS.FS {
                 }
                 
                 if (nameLen <= 0 || nameLen > 100) {
-                    BootConsole.WriteLine("[TarFS] Invalid name length: " + nameLen.ToString());
+                    // Skip invalid entry
                     sec += SizeToSec(size);
                     continue;
                 }
@@ -391,18 +429,15 @@ namespace guideXOS.FS {
                 string fullPath = null;
                 try {
                     fullPath = string.FromASCII((nint)hdr->name, nameLen);
-                    
-                    // DEBUG: Log every file we find
-                    BootConsole.WriteLine("[TarFS] Found entry: " + fullPath);
                 } catch {
-                    BootConsole.WriteLine("[TarFS] ERROR: Failed to create string from name");
+                    BootConsole.WriteLine("[TarFS] ERROR: String conversion failed");
                     sec += SizeToSec(size);
                     continue;
                 }
                 
                 // Check if this is the file we want
                 if (fullPath.Equals(searchPath) || fullPath.Equals(Name)) {
-                    BootConsole.WriteLine("[TarFS] Found file: " + fullPath);
+                    BootConsole.WriteLine("[TarFS] FOUND file!");
                     
                     // Read file data
                     ulong sectorCount = SizeToSec(size);
@@ -420,6 +455,7 @@ namespace guideXOS.FS {
                     buffer.Length = (int)size;
                     
                     if (fullPath != null) fullPath.Dispose();
+                    BootConsole.WriteLine("[TarFS] File loaded successfully");
                     return buffer;
                 }
                 
@@ -428,8 +464,8 @@ namespace guideXOS.FS {
                 sec += SizeToSec(size);
             }
             
-            BootConsole.WriteLine("[TarFS] File not found: " + Name);
-            Panic.Error($"{Name} is not found!");
+            BootConsole.WriteLine("[TarFS] NOT FOUND");
+            Panic.Error("File not found!");
             return null;
         }
         

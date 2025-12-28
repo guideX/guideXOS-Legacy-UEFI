@@ -57,7 +57,38 @@ namespace guideXOS.FS {
         /// </summary>
         /// <param name="name"></param>
         /// <returns></returns>
-        public static byte[] ReadAllBytes(string name) => Instance.ReadAllBytes(name);
+        public static byte[] ReadAllBytes(string name) {
+            BootConsole.WriteLine("[File.ReadAllBytes] Called for: " + name);
+            
+            if (Instance == null) {
+                BootConsole.WriteLine("[File.ReadAllBytes] ERROR: Instance is NULL!");
+                return null;
+            }
+            
+            BootConsole.WriteLine("[File.ReadAllBytes] Instance is valid, calling virtual method");
+            
+            // WORKAROUND: Try direct cast to TarFS to bypass virtual dispatch
+            try {
+                TarFS tarfs = Instance as TarFS;
+                if (tarfs != null) {
+                    BootConsole.WriteLine("[File.ReadAllBytes] Using direct TarFS cast");
+                    return tarfs.ReadAllBytes(name);
+                } else {
+                    BootConsole.WriteLine("[File.ReadAllBytes] Instance is not TarFS, using virtual call");
+                }
+            } catch {
+                BootConsole.WriteLine("[File.ReadAllBytes] Cast to TarFS failed!");
+            }
+            
+            try {
+                byte[] result = Instance.ReadAllBytes(name);
+                BootConsole.WriteLine("[File.ReadAllBytes] Virtual method returned");
+                return result;
+            } catch {
+                BootConsole.WriteLine("[File.ReadAllBytes] EXCEPTION in virtual method!");
+                return null;
+            }
+        }
         /// <summary>
         /// Read All Bytes
         /// </summary>
