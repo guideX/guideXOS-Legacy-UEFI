@@ -291,13 +291,18 @@ namespace guideXOS.Misc {
             
             // UEFI: Initialize ramdisk and filesystem for File API support (PNG loading, etc.)
             if (bootInfo->HasRamdisk && bootInfo->RamdiskBase != 0) {
-                BootConsole.WriteLine("[Initrd] Initializing Ramdisk");
+                BootConsole.WriteLine("[Initrd] Ramdisk detected");
+                BootConsole.WriteLine("[Initrd] SKIP: Ramdisk memory not yet mapped by bootloader");
+                BootConsole.WriteLine("[Initrd] TODO: Bootloader needs to identity-map ramdisk region");
+                
+                // Skip ramdisk for now - boot without it
+                // Once bootloader is fixed to map the ramdisk, uncomment this code:
+                /*
+                BootConsole.WriteLine("[Initrd] Creating Ramdisk object");
                 try {
-                    // CRITICAL: Set Disk.Instance BEFORE filesystem init
                     Disk.Instance = new Ramdisk((IntPtr)bootInfo->RamdiskBase);
                     BootConsole.WriteLine("[Initrd] Ramdisk initialized");
                     
-                    // UEFI ramdisk is always TAR format - skip AutoFS detection to avoid hangs
                     BootConsole.WriteLine("[FS] Mounting TarFS");
                     try {
                         File.Instance = new TarFS();
@@ -308,6 +313,7 @@ namespace guideXOS.Misc {
                 } catch {
                     BootConsole.WriteLine("[Initrd] WARNING: Ramdisk initialization failed");
                 }
+                */
             } else {
                 BootConsole.WriteLine("[Initrd] WARNING: No ramdisk loaded!");
             }

@@ -94,32 +94,54 @@ unsafe class Program {
 
         //Sized width to 512
         BootConsole.WriteLine("[CURSOR] Creating cursor images");
-        // UEFI mode now has working filesystem - try loading PNG cursors
+        
+        // Try to load PNG cursors from filesystem (works in both Legacy and UEFI with cached TarFS)
+        BootConsole.WriteLine("[CURSOR] Loading PNG cursors from filesystem");
+        
         try { 
-            Cursor = new PNG(File.ReadAllBytes("Images/Cursor.png")); 
-            BootConsole.WriteLine("[CURSOR] Loaded Cursor.png");
+            BootConsole.WriteLine("[CURSOR] Loading Images/Cursor.png");
+            byte[] cursorData = File.ReadAllBytes("Images/Cursor.png");
+            Cursor = new PNG(cursorData);
+            cursorData.Dispose();
+            BootConsole.WriteLine("[CURSOR] Loaded Cursor.png successfully");
         } catch { 
+            BootConsole.WriteLine("[CURSOR] Failed to load Cursor.png, using fallback");
             Cursor = new Image(16, 16);
-            BootConsole.WriteLine("[CURSOR] Using fallback cursor");
+            // Fill with white arrow
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    if (x + y < 16) {
+                        Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF);
+                    }
+                }
+            }
         }
         
         try { 
-            CursorMoving = new PNG(File.ReadAllBytes("Images/Grab.png")); 
-            BootConsole.WriteLine("[CURSOR] Loaded Grab.png");
+            BootConsole.WriteLine("[CURSOR] Loading Images/Grab.png");
+            byte[] grabData = File.ReadAllBytes("Images/Grab.png");
+            CursorMoving = new PNG(grabData);
+            grabData.Dispose();
+            BootConsole.WriteLine("[CURSOR] Loaded Grab.png successfully");
         } catch { 
-            CursorMoving = Cursor; 
-            BootConsole.WriteLine("[CURSOR] Using fallback grab cursor");
+            CursorMoving = Cursor;
+            BootConsole.WriteLine("[CURSOR] Failed to load Grab.png, using fallback");
         }
         
         try { 
-            CursorBusy = new PNG(File.ReadAllBytes("Images/Busy.png")); 
-            BootConsole.WriteLine("[CURSOR] Loaded Busy.png");
+            BootConsole.WriteLine("[CURSOR] Loading Images/Busy.png");
+            byte[] busyData = File.ReadAllBytes("Images/Busy.png");
+            CursorBusy = new PNG(busyData);
+            busyData.Dispose();
+            BootConsole.WriteLine("[CURSOR] Loaded Busy.png successfully");
         } catch { 
-            CursorBusy = Cursor; 
-            BootConsole.WriteLine("[CURSOR] Using fallback busy cursor");
+            CursorBusy = Cursor;
+            BootConsole.WriteLine("[CURSOR] Failed to load Busy.png, using fallback");
         }
         
-        // Only initialize BitFont in Legacy mode (requires fonts)
+        BootConsole.WriteLine("[CURSOR] All cursors created");
+        
+        // Only initialize BitFont in Legacy mode (fonts require more complex initialization)
         if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
             BitFont.Initialize();
             string CustomCharset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
