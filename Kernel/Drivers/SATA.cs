@@ -180,9 +180,9 @@ namespace guideXOS.Kernel.Drivers {
             for (int i = 0; i < Ports.Count; i++) {
                 Ports[i].Configure();
 
-                Console.Write("[SATA] SATA Port ");
-                Console.Write(((ulong)i).ToString());
-                Console.WriteLine(" Configured");
+                BootConsole.Write("[SATA] SATA Port ");
+                BootConsole.Write(((ulong)i).ToString());
+                BootConsole.WriteLine(" Configured");
             }
         }
 

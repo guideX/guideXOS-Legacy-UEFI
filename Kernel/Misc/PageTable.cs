@@ -9,7 +9,7 @@ namespace guideXOS {
 
         public static ulong* PML4;
 
-        internal static void Initialise() {
+        internal static void Initialize() {
             PML4 = (ulong*)SMP.SharedPageTable;
 
             Native.Stosb(PML4, 0, 0x1000);

@@ -2,7 +2,7 @@ namespace guideXOS.Kernel.Drivers {
     public class Serial {
         public const ushort COM1 = 0x3F8;
 
-        public static void Initialise() {
+        public static void Initialize() {
             Native.Out8(COM1 + 1, 0x00);    // Disable all interrupts
             Native.Out8(COM1 + 3, 0x80);    // Enable DLAB (set baud rate divisor)
             Native.Out8(COM1 + 0, 0x03);    // Set divisor to 3 (lo byte) 38400 baud

@@ -18,12 +18,12 @@ namespace guideXOS.Misc {
                 _Bpp = *(p + 0x1C);
 
                 if (p[0] != (byte)'B' && p[1] != (byte)'M') {
-                    Console.WriteLine("This is not a bitmap");
+                    BootConsole.WriteLine("This is not a bitmap");
                     return;
                 }
 
                 if (_Bpp != 24 && _Bpp != 32) {
-                    Console.WriteLine("Only support 24bit or 32bit bitmap");
+                    BootConsole.WriteLine("Only support 24bit or 32bit bitmap");
                     return;
                 }
 

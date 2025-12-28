@@ -24,10 +24,10 @@ namespace guideXOS {
         public static void Initialize() {
             PCIDevice dev = null;
 
-            Console.Write("[RTL8111] Scanning for Realtek NIC...\n");
-            Console.Write("[RTL8111] Total PCI devices: ");
-            Console.Write(PCI.Devices.Count.ToString());
-            Console.Write("\n");
+            BootConsole.Write("[RTL8111] Scanning for Realtek NIC...\n");
+            BootConsole.Write("[RTL8111] Total PCI devices: ");
+            BootConsole.Write(PCI.Devices.Count.ToString());
+            BootConsole.Write("\n");
 
             for (int i = 0; i < PCI.Devices.Count; i++) {
                 if (PCI.Devices[i] != null) {
@@ -36,11 +36,11 @@ namespace guideXOS {
                     
                     // Debug: Print all Realtek devices
                     if (vendorID == 0x10EC) {
-                        Console.Write("[RTL8111] Found Realtek device: Vendor=0x");
-                        Console.Write(vendorID.ToString("X4"));
-                        Console.Write(" Device=0x");
-                        Console.Write(deviceID.ToString("X4"));
-                        Console.Write("\n");
+                        BootConsole.Write("[RTL8111] Found Realtek device: Vendor=0x");
+                        BootConsole.Write(vendorID.ToString("X4"));
+                        BootConsole.Write(" Device=0x");
+                        BootConsole.Write(deviceID.ToString("X4"));
+                        BootConsole.Write("\n");
                     }
                     
                     if (
@@ -53,19 +53,19 @@ namespace guideXOS {
                           )
                         ) {
                         dev = PCI.Devices[i];
-                        Console.Write("[RTL8111] Matched device: 0x");
-                        Console.Write(deviceID.ToString("X4"));
-                        Console.Write("\n");
+                        BootConsole.Write("[RTL8111] Matched device: 0x");
+                        BootConsole.Write(deviceID.ToString("X4"));
+                        BootConsole.Write("\n");
                         break;
                     }
                 }
             }
 
             if (dev == null) {
-                Console.Write("[RTL8111] No compatible device found!\n");
+                BootConsole.Write("[RTL8111] No compatible device found!\n");
                 return;
             }
-            Console.Write("[RTL8111] device found!\n");
+            BootConsole.Write("[RTL8111] device found!\n");
 
             dev.WriteRegister(0x04, 0x04 | 0x02 | 0x01);
 
@@ -114,7 +114,7 @@ namespace guideXOS {
 
             Interrupts.EnableInterrupt(dev.IRQ, &OnInterrupt);
 
-            Console.Write("[RTL8111] device initialized\n");
+            BootConsole.Write("[RTL8111] device initialized\n");
 
             NETv4.Sender = &Send;
         }

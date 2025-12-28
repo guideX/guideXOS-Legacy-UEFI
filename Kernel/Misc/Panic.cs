@@ -23,12 +23,12 @@ namespace guideXOS.Misc {
 
             ConsoleColor color = Console.ForegroundColor;
 
-            Console.ForegroundColor = System.ConsoleColor.Red;
-            Console.Write("PANIC: ");
-            Console.WriteLine(msg);
-            Console.WriteLine("All CPU Halted Now!");
+            //Console.ForegroundColor = System.ConsoleColor.Red;
+            BootConsole.Write("PANIC: ");
+            BootConsole.WriteLine(msg);
+            BootConsole.WriteLine("All CPU Halted Now!");
 
-            Console.ForegroundColor = color;
+            //BootConsole.ForegroundColor = color;
 
             if (!skippable) {
                 Framebuffer.Update();

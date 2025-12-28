@@ -98,7 +98,7 @@ namespace guideXOS.Compat {
 
         private static void ExitProcess(uint uExitCode) {
             // No real process model yet; just log and return
-            Console.WriteLine($"[Win32Shim] ExitProcess({uExitCode}) called");
+            BootConsole.WriteLine($"[Win32Shim] ExitProcess({uExitCode}) called");
         }
 
         private static void* LocalAlloc(uint uFlags, nuint uBytes) {
@@ -129,8 +129,8 @@ namespace guideXOS.Compat {
             try {
                 string text = AnsiZToString(lpText);
                 string caption = AnsiZToString(lpCaption);
-                if (!string.IsNullOrEmpty(caption)) Console.WriteLine($"[MessageBoxA] {caption}: {text}");
-                else Console.WriteLine($"[MessageBoxA] {text}");
+                if (!string.IsNullOrEmpty(caption)) BootConsole.WriteLine($"[MessageBoxA] {caption}: {text}");
+                else BootConsole.WriteLine($"[MessageBoxA] {text}");
             } catch { }
             return 1;
         }
@@ -169,7 +169,7 @@ namespace guideXOS.Compat {
 
         // Fallback stub used when import cannot be resolved
         public static ulong NotImplementedStub() {
-            Console.WriteLine("[Win32Shim] Called unresolved import");
+            BootConsole.WriteLine("[Win32Shim] Called unresolved import");
             return 0UL;
         }
     }

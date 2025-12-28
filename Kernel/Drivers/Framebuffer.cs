@@ -42,10 +42,13 @@ namespace guideXOS.Kernel.Drivers {
             }
             set {
                 if (Graphics == null) return;
+                if (VideoMemory == null) return;
+                if (Width == 0 || Height == 0) return;
                 if (_TripleBuffered == value) return;
 
-                Graphics.Clear(0x0);
                 Graphics.VideoMemory = value ? FirstBuffer : VideoMemory;
+                if (Graphics.VideoMemory == null) return;
+                Graphics.Clear(0x0);
                 _TripleBuffered = value;
                 if (!_TripleBuffered) {
                     Console.Clear();
@@ -69,15 +72,14 @@ namespace guideXOS.Kernel.Drivers {
         public static void Initialize(ushort XRes, ushort YRes, uint* FB) {
             Width = XRes;
             Height = YRes;
+            VideoMemory = FB; // Video memory must be set before any operation that might clear/draw
             FirstBuffer = (uint*)Allocator.Allocate((ulong)(XRes * YRes * 4));
             SecondBuffer = (uint*)Allocator.Allocate((ulong)(XRes * YRes * 4));
             Native.Stosd(FirstBuffer, 0, (ulong)(XRes * YRes));
             Native.Stosd(SecondBuffer, 0, (ulong)(XRes * YRes));
             Control.MousePosition.X = XRes / 2;
             Control.MousePosition.Y = YRes / 2;
-            Graphics = new Graphics(Width, Height, FB);
-            VideoMemory = FB;
-
+            Graphics = new Graphics(Width, Height, FB); // Ensure Graphics is created ONLY here
             Console.Clear();
         }
     }

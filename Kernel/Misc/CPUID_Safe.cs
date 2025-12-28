@@ -102,23 +102,23 @@ namespace guideXOS.Misc {
         
         public static void PrintCPUInfo() {
             if (!IsCPUIDSupported()) {
-                Console.WriteLine("[CPU] CPUID not supported");
+                BootConsole.WriteLine("[CPU] CPUID not supported");
                 return;
             }
             
-            Console.WriteLine($"[CPU] Vendor: {GetVendorString()}");
-            Console.WriteLine($"[CPU] Max CPUID Leaf: 0x{GetMaxLeaf():X}");
-            Console.Write("[CPU] Features: ");
+            BootConsole.WriteLine($"[CPU] Vendor: {GetVendorString()}");
+            BootConsole.WriteLine($"[CPU] Max CPUID Leaf: 0x{GetMaxLeaf():X}");
+            BootConsole.Write("[CPU] Features: ");
             
-            if (HasSSE()) Console.Write("SSE ");
-            if (HasSSE2()) Console.Write("SSE2 ");
-            if (HasSSE3()) Console.Write("SSE3 ");
-            if (HasAVX()) Console.Write("AVX ");
-            if (HasFXSR()) Console.Write("FXSR ");
-            if (HasPAE()) Console.Write("PAE ");
-            if (HasAPIC()) Console.Write("APIC ");
+            if (HasSSE()) BootConsole.Write("SSE ");
+            if (HasSSE2()) BootConsole.Write("SSE2 ");
+            if (HasSSE3()) BootConsole.Write("SSE3 ");
+            if (HasAVX()) BootConsole.Write("AVX ");
+            if (HasFXSR()) BootConsole.Write("FXSR ");
+            if (HasPAE()) BootConsole.Write("PAE ");
+            if (HasAPIC()) BootConsole.Write("APIC ");
             
-            Console.WriteLine("");
+            BootConsole.WriteLine("");
         }
     }
 }

@@ -315,15 +315,15 @@ namespace guideXOS.GUI {
             if (_useDHCP) {
                 // Run DHCP
                 try {
-                    Console.WriteLine("[NET] Attempting DHCP configuration...");
+                    BootConsole.WriteLine("[NET] Attempting DHCP configuration...");
                     bool success = NETv4.DHCPDiscover();
                     if (success) {
-                        Console.WriteLine("[NET] DHCP successful");
+                        BootConsole.WriteLine("[NET] DHCP successful");
                     } else {
-                        Console.WriteLine("[NET] DHCP failed");
+                        BootConsole.WriteLine("[NET] DHCP failed");
                     }
                 } catch {
-                    Console.WriteLine("[NET] DHCP error");
+                    BootConsole.WriteLine("[NET] DHCP error");
                 }
             } else {
                 // Parse and apply manual configuration
@@ -348,10 +348,10 @@ namespace guideXOS.GUI {
                     NETv4.IPAddress gateway = new NETv4.IPAddress(gw1, gw2, gw3, gw4);
 
                     NETv4.Configure(ip, gateway, mask);
-                    Console.WriteLine("[NET] Manual configuration applied");
-                    Console.WriteLine("[NET] IP: " + ip1.ToString() + "." + ip2.ToString() + "." + ip3.ToString() + "." + ip4.ToString());
+                    BootConsole.WriteLine("[NET] Manual configuration applied");
+                    BootConsole.WriteLine("[NET] IP: " + ip1.ToString() + "." + ip2.ToString() + "." + ip3.ToString() + "." + ip4.ToString());
                 } catch {
-                    Console.WriteLine("[NET] Configuration error");
+                    BootConsole.WriteLine("[NET] Configuration error");
                 }
             }
         }

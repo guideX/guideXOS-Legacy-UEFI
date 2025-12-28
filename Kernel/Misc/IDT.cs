@@ -102,8 +102,14 @@ public static class IDT {
         public InterruptReturnStack irs;
     }
 
+    // Throttled IRQ0 debug
+    private static uint _irq0DebugCounter;
+
     [RuntimeExport("intr_handler")]
     public static unsafe void intr_handler(int irq, IDTStackGeneric* stack) {
+        // Prevent nested interrupts while inside managed interrupt handler.
+        Native.Cli();
+
         if (irq < 0x20) {
             // Compute correct location of InterruptReturnStack depending on whether the CPU pushed an error code
             InterruptReturnStack* irs;
@@ -144,34 +150,18 @@ public static class IDT {
             for (; ; ) Native.Hlt();
         }
 
-        //DEAD
         if (irq == 0xFD) {
             Native.Cli();
             Native.Hlt();
             for (; ; ) Native.Hlt();
         }
 
-        //For main processor
-        if (SMP.ThisCPU == 0) {
-            //System calls
-            if (irq == 0x80) {
-                var pCell = (MethodFixupCell*)stack->rs.rcx;
-                string name = string.FromASCII(pCell->Module->ModuleName, StringHelper.StringLength((byte*)pCell->Module->ModuleName));
-                stack->rs.rax = (ulong)API.HandleSystemCall(name);
-                name.Dispose();
-            }
-            switch (irq) {
-                case 0x20:
-                    //misc.asm Schedule_Next
-                    if (stack->rs.rdx != 0x61666E6166696E)
-                        Timer.OnInterrupt();
-                    break;
-            }
-            Interrupts.HandleInterrupt(irq);
-        }
-
+        // Timer IRQ0 (PIC -> vector 0x20). Drive scheduler here.
         if (irq == 0x20) {
+            // Switch thread context by rewriting the IRET frame in-place.
             ThreadPool.Schedule(stack);
+            Interrupts.EndOfInterrupt((byte)irq);
+            return;
         }
 
         Interrupts.EndOfInterrupt((byte)irq);

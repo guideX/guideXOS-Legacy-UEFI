@@ -481,12 +481,183 @@ Load_IDT:
     lidt [rcx]
     ret
 
-; The following are currently stubbed as no-ops or trivial returns.
-; They must be replaced with real implementations for a functional OS.
+; ==========================================================
+; IDT + Interrupt stubs (minimal)
+;
+; C# side exports: IDT.intr_handler(int irq, IDTStackGeneric* stack)
+; We dispatch with Windows x64 ABI:
+;   RCX = irq (vector number)
+;   RDX = pointer to a stack struct compatible with IDTStackGeneric
+;
+; This implementation is intentionally simple:
+; - It always presents an errorCode slot (0) to managed code.
+; - It saves general purpose registers in the order expected by IDT.RegistersStack.
+; - It passes the address of the saved register block as `stack`.
+;
+; IMPORTANT: This assumes the CPU pushed an interrupt-return frame (RIP,CS,RFLAGS,RSP,SS)
+; and we do not modify it except via the managed handler editing values in memory.
+;
+; This is enough to avoid triple faults and to allow IRQ0 to be handled.
+; ==========================================================
 
+extern intr_handler
+
+%macro PUSH_GPRS 0
+    ; Order must match IDT.RegistersStack: rax rcx rdx rbx rsi rdi r8 r9 r10 r11 r12 r13 r14 r15
+    push rax
+    push rcx
+    push rdx
+    push rbx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+%endmacro
+
+%macro POP_GPRS 0
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rbx
+    pop rdx
+    pop rcx
+    pop rax
+%endmacro
+
+; A common ISR entry used by all vectors.
+; On entry: AL contains vector number.
+global isr_common
+isr_common:
+    ; Save vector in rbx temporarily
+    movzx ebx, al
+
+    ; Save registers
+    PUSH_GPRS
+
+    ; Provide a dummy error code slot so managed code can always read stack->errorCode
+    push qword 0
+
+    ; RCX = irq/vector, RDX = pointer to IDTStackGeneric
+    mov ecx, ebx
+    mov rdx, rsp
+
+    call intr_handler
+
+    ; --- DEBUG: emit '.' to COM1 to prove we returned from intr_handler ---
+    ; Wait for THR empty
+    mov dx, 0x3FD
+.isr_wait:
+    in al, dx
+    test al, 0x20
+    jz .isr_wait
+    mov dx, 0x3F8
+    mov al, '.'
+    out dx, al
+    ; --- END DEBUG ---
+
+    ; Pop error code slot
+    add rsp, 8
+
+    ; Restore regs and return
+    POP_GPRS
+    iretq
+
+; Generate stubs for 0..255 that load AL=vector and jump to common.
+%macro DEFINE_ISR 1
+global isr%1
+isr%1:
+    mov al, %1
+    jmp isr_common
+%endmacro
+
+%assign __i 0
+%rep 256
+    DEFINE_ISR __i
+%assign __i __i+1
+%endrep
+
+; IDT entry builder
+; rdi = idt base, esi = vector, rax = handler address
+; Gate type: interrupt gate (0x8E), selector 0x08
+%macro SET_IDT_ENTRY 0
+    ; Compute &idt[vector] without using scale=16 (not supported in x86 addressing)
+    mov r11, rsi
+    shl r11, 4              ; *16
+    add r11, rdi            ; base
+
+    ; offset low
+    mov word [r11 + 0], ax
+    ; selector
+    mov word [r11 + 2], 0x08
+    ; reserved0
+    mov byte [r11 + 4], 0
+    ; type attributes
+    mov byte [r11 + 5], 0x8E
+
+    ; offset mid
+    shr rax, 16
+    mov word [r11 + 6], ax
+
+    ; offset high
+    shr rax, 16
+    mov dword [r11 + 8], eax
+
+    ; reserved1
+    mov dword [r11 + 12], 0
+%endmacro
+
+; Replaces the previous stub.
+; Signature: set_idt_entries(void* idt)
+; Windows x64 ABI: RCX = idt pointer
 global set_idt_entries
 set_idt_entries:
+    push rbx
+    push rdi
+    push rsi
+    push r11
+
+    mov rdi, rcx      ; idt base
+    xor esi, esi      ; vector index
+
+.fill_loop:
+    lea rbx, [rel isr_table]
+    mov rax, [rbx + rsi*8]
+    SET_IDT_ENTRY
+
+    inc esi
+    cmp esi, 256
+    jne .fill_loop
+
+    pop r11
+    pop rsi
+    pop rdi
+    pop rbx
     ret
+
+; Jump table for ISR addresses
+align 8
+isr_table:
+%assign __j 0
+%rep 256
+    dq isr%+__j
+%assign __j __j+1
+%endrep
+
+; The following are currently stubbed as no-ops or trivial returns.
+; They must be replaced with real implementations for a functional OS.
 
 global enable_sse
 enable_sse:

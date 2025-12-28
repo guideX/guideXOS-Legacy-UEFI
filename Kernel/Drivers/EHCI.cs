@@ -23,10 +23,10 @@ namespace guideXOS.Kernel.Drivers {
             cmd = (USBRequest*)Allocator.Allocate((ulong)sizeof(USBRequest));
             PCIDevice device = PCI.GetDevice(0x0C, 0x03, 0x20);
             if (device == null) return;
-            Console.WriteLine("[EHCI] EHCI controller found!");
+            BootConsole.WriteLine("[EHCI] EHCI controller found!");
             device.WriteRegister(0x04, 0x04 | 0x02 | 0x01);
             uint bar0 = device.Bar0;
-            Console.WriteLine($"[EHCI] Bar0: {bar0.ToString("x2")}");
+            BootConsole.WriteLine($"[EHCI] Bar0: {bar0.ToString("x2")}");
             BaseAddr = bar0 + *(byte*)bar0;
             ushort ver = *(ushort*)(bar0 + 0x02);
             if (ver != 0x100) {
@@ -35,16 +35,16 @@ namespace guideXOS.Kernel.Drivers {
             }
             uint hcsparams = *(uint*)(bar0 + 0x04);
             AvailablePorts = (byte)(hcsparams & 0xF);
-            Console.WriteLine($"[EHCI] {AvailablePorts} Ports available");
+            BootConsole.WriteLine($"[EHCI] {AvailablePorts} Ports available");
             uint hccparams = *(uint*)(bar0 + 0x08);
             uint eecp = (hccparams & (255 << 8)) >> 8;
             if (eecp >= 0x40) {
-                Console.WriteLine("[EHCI] Disabling BIOS EHCI Hand-off");
+                BootConsole.WriteLine("[EHCI] Disabling BIOS EHCI Hand-off");
                 uint legsup = PCI.ReadRegister32(device.Bus, device.Slot, device.Function, (byte)eecp);
                 if (legsup & 0x00010000) {
                     PCI.WriteRegister32(device.Bus, device.Slot, device.Function, (byte)eecp, legsup | 0x01000000);
                     for (; ; ) {
-                        Console.WriteLine("[EHCI] Waitting for BIOS ready");
+                        BootConsole.WriteLine("[EHCI] Waitting for BIOS ready");
                         legsup = PCI.ReadRegister32(device.Bus, device.Slot, device.Function, (byte)eecp);
                         if ((~legsup & 0x00010000) != 0 && (legsup & 0x01000000) != 0) {
                             break;
@@ -56,7 +56,7 @@ namespace guideXOS.Kernel.Drivers {
             AsyncListReg = BaseAddr + (nuint)0x18;
             uint default_cmd = *(uint*)CMDReg;
             if (default_cmd & 1) {
-                Console.WriteLine("[EHCI] Stopping this controller");
+                BootConsole.WriteLine("[EHCI] Stopping this controller");
                 *(uint*)CMDReg &= ~1u;
                 while (true) {
                     if ((*(uint*)CMDReg & 1) == 0) {
@@ -66,7 +66,7 @@ namespace guideXOS.Kernel.Drivers {
             }
             *(uint*)CMDReg |= 2;
             while (true) {
-                Console.WriteLine("[EHCI] Waitting for controller ready");
+                BootConsole.WriteLine("[EHCI] Waitting for controller ready");
                 if ((*(uint*)CMDReg & 2) == 0) {
                     break;
                 }
@@ -82,7 +82,7 @@ namespace guideXOS.Kernel.Drivers {
             *(uint*)CMDReg |= 0x400001;
             *(uint*)(BaseAddr + (nuint)0x40) |= 1;
             ScanPorts();
-            Console.WriteLine("[EHCI] EHCI controller initialized");
+            BootConsole.WriteLine("[EHCI] EHCI controller initialized");
         }
         /// <summary>
         /// End Point
@@ -366,7 +366,7 @@ namespace guideXOS.Kernel.Drivers {
                 }
             }
             if (lsts == 0) {
-                Console.WriteLine("[EHCI] Transmission failed");
+                BootConsole.WriteLine("[EHCI] Transmission failed");
             }
             return lsts;
         }
@@ -694,7 +694,7 @@ namespace guideXOS.Kernel.Drivers {
             device.Speed = speed;
 
             USB.DeviceAddr++;
-            Console.WriteLine($"[EHCI] Next device address is {USB.DeviceAddr}");
+            BootConsole.WriteLine($"[EHCI] Next device address is {USB.DeviceAddr}");
 
             if (parent == null) {
                 nuint reg_port = BaseAddr + (nuint)(0x44 + (port * 4));
@@ -707,7 +707,7 @@ namespace guideXOS.Kernel.Drivers {
                 portinfo = *(uint*)reg_port;
 
                 if ((portinfo & 4) == 0) {
-                    Console.WriteLine($"[EHCI] Port {port} Is not enabled");
+                    BootConsole.WriteLine($"[EHCI] Port {port} Is not enabled");
                     device.Dispose();
                     return false;
                 }
@@ -715,7 +715,7 @@ namespace guideXOS.Kernel.Drivers {
 
             byte addr = SetDeviceAddr(USB.DeviceAddr, parent, device.Speed);
             if (addr == 0) {
-                Console.WriteLine($"[EHCI] Port {port} Failed to set device address");
+                BootConsole.WriteLine($"[EHCI] Port {port} Failed to set device address");
                 device.Dispose();
                 return false;
             }
@@ -725,22 +725,22 @@ namespace guideXOS.Kernel.Drivers {
 
             byte* _desc = GetDesc(USB.DeviceAddr, 8, parent, device.Speed);
             if (_desc == 0) {
-                Console.WriteLine($"[EHCI] Port {port} Failed to get descriptor");
+                BootConsole.WriteLine($"[EHCI] Port {port} Failed to get descriptor");
                 device.Dispose();
                 return false;
             }
 
             if (!(_desc[0] == 0x12 && _desc[1] == 0x1)) {
-                Console.WriteLine($"[EHCI] Port {port} Invalid magic number");
+                BootConsole.WriteLine($"[EHCI] Port {port} Invalid magic number");
                 device.Dispose();
                 return false;
             }
             byte max_packet_size = _desc[7];
-            Console.WriteLine($"[EHCI] Port {port} Max Packet Size {max_packet_size}");
+            BootConsole.WriteLine($"[EHCI] Port {port} Max Packet Size {max_packet_size}");
 
             ConfigDesc* cdesc = (ConfigDesc*)GetConfig(USB.DeviceAddr, (byte)(sizeof(InterfaceDesc) + sizeof(ConfigDesc) + (sizeof(EndPoint) * 2)), parent, device.Speed);
             if (cdesc == 0) {
-                Console.WriteLine($"[EHCI] [ECHI] Port {port} Failed to get descriptor");
+                BootConsole.WriteLine($"[EHCI] [ECHI] Port {port} Failed to get descriptor");
                 device.Dispose();
                 return false;
             }
@@ -767,11 +767,11 @@ namespace guideXOS.Kernel.Drivers {
                 device.Dispose();
                 return false;
             }
-            Console.WriteLine($"[EHCI] Port{port} Class: {Class}");
+            BootConsole.WriteLine($"[EHCI] Port{port} Class: {Class}");
 
             byte config_res = SetConfig(USB.DeviceAddr, 1, parent, device.Speed);
             if (config_res == 0) {
-                Console.WriteLine($"[EHCI] Port {port} failed to set configuration");
+                BootConsole.WriteLine($"[EHCI] Port {port} failed to set configuration");
                 device.Dispose();
                 return false;
             }
@@ -789,7 +789,7 @@ namespace guideXOS.Kernel.Drivers {
 
             for (int i = 0; i < AvailablePorts; i++) {
                 nuint reg_port = BaseAddr + (nuint)(0x44 + (i * 4));
-                Console.WriteLine($"[EHCI] Port {i} {((*(uint*)reg_port & 3)?"Present" : "Not present")} ");
+                BootConsole.WriteLine($"[EHCI] Port {i} {((*(uint*)reg_port & 3)?"Present" : "Not present")} ");
                 if (*(uint*)reg_port & 3) {
                     USB.InitPort(i, null, 2, 2);
                 }

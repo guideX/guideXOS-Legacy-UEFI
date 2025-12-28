@@ -86,12 +86,12 @@ namespace guideXOS.Kernel.Drivers {
             public ulong ExtendedMaximumCapacity;
         }
 
-        public static void Initialise() {
+        public static void Initialize() {
             byte* p = (byte*)0xF0000;
             while (*(uint*)p != 0x5F4D535F) {
                 p++;
                 if ((ulong)p > 0xFFFFF) {
-                    Console.WriteLine("SMBIOS not found!");
+                    BootConsole.WriteLine("SMBIOS not found!");
                     return;
                 }
             }
@@ -99,7 +99,7 @@ namespace guideXOS.Kernel.Drivers {
             SMBIOSEntryPoint* entry = (SMBIOSEntryPoint*)p;
 
             //Console.Write("[SMBIOS] SMBIOS Version: ");
-            Console.WriteLine(entry->MajorVersion.ToString());
+            BootConsole.WriteLine(entry->MajorVersion.ToString());
 
             p = (byte*)entry->TableAddress;
             while ((uint)p < (entry->TableAddress + entry->TableLength)) {
@@ -118,7 +118,7 @@ namespace guideXOS.Kernel.Drivers {
                         //Console.Write("Mhz ");
                         //Console.Write("Number of Core: ");
                         //Console.Write(((ulong)pinfo->CoreCount).ToString());
-                        Console.WriteLine();
+                        BootConsole.WriteLine(" ");
                         break;
                 }
 
@@ -135,8 +135,8 @@ namespace guideXOS.Kernel.Drivers {
                 while (*p++ != 0) ;
                 count++;
             }
-            while (*p != 0) Console.Write((char)*p++);
-            Console.Write(' ');
+            while (*p != 0) BootConsole.Write((char)*p++);
+            BootConsole.Write(' ');
         }
     }
 }

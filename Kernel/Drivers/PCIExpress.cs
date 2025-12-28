@@ -137,7 +137,7 @@ namespace guideXOS.Kernel.Drivers {
                         device.Bar5 = Dev->Bar5;
                     }
 
-                    Console.WriteLine($"[PCI Express {device.Bus}:{device.Slot}:{device.Function}] {VendorID.GetName(device.VendorID)} {ClassID.GetName(device.ClassID)}");
+                    BootConsole.WriteLine($"[PCI Express {device.Bus}:{device.Slot}:{device.Function}] {VendorID.GetName(device.VendorID)} {ClassID.GetName(device.ClassID)}");
 
                     PCI.Devices.Add(device);
                 }

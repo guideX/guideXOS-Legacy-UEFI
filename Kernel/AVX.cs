@@ -7,7 +7,7 @@ namespace guideXOS {
         public static void init_avx() {
             CPUID* cpuid = Native.CPUID(1);
             if (!BitHelpers.IsBitSet(cpuid->ECX, 28)) {
-                Console.WriteLine("[AVX] Warning: this CPU doesn't support AVX!");
+                BootConsole.WriteLine("[AVX] Warning: this CPU doesn't support AVX!");
                 return;
             }
             enable_avx();

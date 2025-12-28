@@ -214,18 +214,18 @@ namespace guideXOS.Misc {
         }
         
         public void DiagnoseFont() {
-            Console.WriteLine("Font Diagnosis:");
-            Console.WriteLine($"FontSize: {FontSize}");
-            Console.WriteLine($"Image Width: {image.Width}, Height: {image.Height}");
-            Console.WriteLine($"NumRow: {NumRow}");
-            Console.WriteLine($"Charset length: {charset.Length}");
-            Console.WriteLine($"Charset: {charset}");
-            Console.WriteLine($"Fixed Width Mode: {useFixedWidth}, CharWidth: {CharWidth}");
-            Console.WriteLine($"Has Bold: {_boldVariant != null}");
-            Console.WriteLine($"Has Italic: {_italicVariant != null}");
-            Console.WriteLine($"Has BoldItalic: {_boldItalicVariant != null}");
-            
-            Console.WriteLine("\nTesting specific characters:");
+            BootConsole.WriteLine("Font Diagnosis:");
+            BootConsole.WriteLine($"FontSize: {FontSize}");
+            BootConsole.WriteLine($"Image Width: {image.Width}, Height: {image.Height}");
+            BootConsole.WriteLine($"NumRow: {NumRow}");
+            BootConsole.WriteLine($"Charset length: {charset.Length}");
+            BootConsole.WriteLine($"Charset: {charset}");
+            BootConsole.WriteLine($"Fixed Width Mode: {useFixedWidth}, CharWidth: {CharWidth}");
+            BootConsole.WriteLine($"Has Bold: {_boldVariant != null}");
+            BootConsole.WriteLine($"Has Italic: {_italicVariant != null}");
+            BootConsole.WriteLine($"Has BoldItalic: {_boldItalicVariant != null}");
+
+            BootConsole.WriteLine("\nTesting specific characters:");
             TestChar('/');
             TestChar('>');
             TestChar('Z');
@@ -240,7 +240,7 @@ namespace guideXOS.Misc {
         
         private void TestChar(char c) {
             int index = charset.IndexOf(c);
-            Console.WriteLine($"  '{c}' -> index {index}" + (index == -1 ? " (NOT FOUND)" : ""));
+            BootConsole.WriteLine($"  '{c}' -> index {index}" + (index == -1 ? " (NOT FOUND)" : ""));
         }
     }
 }

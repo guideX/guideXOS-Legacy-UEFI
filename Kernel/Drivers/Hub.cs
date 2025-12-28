@@ -39,9 +39,9 @@ namespace guideXOS.Kernel.Drivers {
             req->Length = (ushort)sizeof(Desc);
             bool b = USB.SendAndReceive(device, req, desc, null);
             if (!b) {
-                Console.WriteLine("[USB Hub] Can't get Hub descriptor");
+                BootConsole.WriteLine("[USB Hub] Can't get Hub descriptor");
             }
-            Console.WriteLine($"[USB Hub] This hub has {desc->PortCount} ports");
+            BootConsole.WriteLine($"[USB Hub] This hub has {desc->PortCount} ports");
             for (int i = 0; i < desc->PortCount; i++) {
                 // Power on port
                 (*req).Clean();
@@ -63,7 +63,7 @@ namespace guideXOS.Kernel.Drivers {
                 req->Length = sizeof(uint);
                 b = USB.SendAndReceive(device, req, &status, null);
                 if (!b) {
-                    Console.WriteLine($"[USB Hub] Can't get Hub port {i} status");
+                    BootConsole.WriteLine($"[USB Hub] Can't get Hub port {i} status");
                     continue;
                 }
 
@@ -89,7 +89,7 @@ namespace guideXOS.Kernel.Drivers {
                         req->Length = sizeof(uint);
                         b = USB.SendAndReceive(device, req, &status, null);
                         if (!b) {
-                            Console.WriteLine($"[USB Hub] Can't get Hub port {i} status after reset");
+                            BootConsole.WriteLine($"[USB Hub] Can't get Hub port {i} status after reset");
                             break;
                         }
                         // Check if reset change bit is set (bit 20)
@@ -113,7 +113,7 @@ namespace guideXOS.Kernel.Drivers {
                     // If port is now enabled (bit 1)
                     if ((status & 2) != 0) {
                         int speed = (int)((status >> 9) & 3);
-                        Console.WriteLine($"[USB Hub] Port {i} has a device, speed: {speed}");
+                        BootConsole.WriteLine($"[USB Hub] Port {i} has a device, speed: {speed}");
                         USB.InitPort(i, device, 2, speed);
                     }
                 }

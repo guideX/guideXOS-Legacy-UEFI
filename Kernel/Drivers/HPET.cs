@@ -26,7 +26,7 @@ namespace guideXOS.Kernel.Drivers {
         /// </summary>
         public static void Initialize() {
             if (ACPI.HPET == null) {
-                Console.WriteLine("[HPET] HPET not found!");
+                BootConsole.WriteLine("[HPET] HPET not found!");
                 return;
             }
             //1 Femtosecond= 1e-15 sec
@@ -34,7 +34,7 @@ namespace guideXOS.Kernel.Drivers {
             WriteRegister(0x10, 0);
             WriteRegister(0xF0, 0);
             WriteRegister(0x10, 1);
-            Console.WriteLine("[HPET] HPET Initialized");
+            BootConsole.WriteLine("[HPET] HPET Initialized");
         }
         /// <summary>
         /// Write Register

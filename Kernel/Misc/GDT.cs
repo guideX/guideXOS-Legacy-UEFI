@@ -91,7 +91,7 @@ static class GDT {
         e.BaseHigh = (byte)((baseAddr >> 24) & 0xFF);
     }
 
-    public static void Initialise() {
+    public static void Initialize() {
         // Kernel code: DPL=0, executable, readable
         FillEntry(ref gdts.KernelCode, 0, 0xFFFFF, 0x9A, 0xA0 | 0x0F);
         // Kernel data: DPL=0, writable

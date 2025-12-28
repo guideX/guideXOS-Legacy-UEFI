@@ -146,7 +146,7 @@ namespace guideXOS {
         }
 
         public static void API_WriteString(string s) {
-            Console.Write(s);
+            BootConsole.Write(s);
             s.Dispose();
         }
 
@@ -217,11 +217,11 @@ namespace guideXOS {
         }
 
         public static void API_Write(char c) {
-            Console.Write(c);
+            BootConsole.Write(c);
         }
 
         public static void API_WriteLine() {
-            Console.WriteLine();
+            BootConsole.WriteLine(" ");
         }
 
         public static nint API_Allocate(ulong size) {

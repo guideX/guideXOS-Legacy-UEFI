@@ -98,7 +98,7 @@ namespace guideXOS.Misc {
                     USBMSC.Initialize(device);
                     break;
                 default:
-                    Console.WriteLine($"[USB] Unrecognized device class:{device.Class} subClass:{device.SubClass}");
+                    BootConsole.WriteLine($"[USB] Unrecognized device class:{device.Class} subClass:{device.SubClass}");
                     break;
 
             }

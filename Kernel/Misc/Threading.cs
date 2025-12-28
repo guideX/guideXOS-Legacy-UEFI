@@ -118,13 +118,25 @@ namespace guideXOS.Misc {
         /// Call this AFTER all kernel initialization is complete.
         /// </summary>
         public static void StartScheduling() {
-            Schedule_Next(); // Start scheduling threads
+            if (!Initialized || Threads == null || Threads.Count == 0) {
+                BootConsole.WriteLine("[SCHED] ThreadPool not initialized - scheduling disabled");
+                for (; ; ) Native.Hlt();
+            }
+
+            BootConsole.WriteLine("[SCHED] Using IRQ0-driven scheduling");
+            BootConsole.WriteLine("[SCHED] Waiting for timer interrupts");
+
+            // Do NOT call Schedule_Next() directly here.
+            // Scheduling occurs from IDT.intr_handler on IRQ 0x20 via ThreadPool.Schedule(stack).
+            for (; ; ) {
+                Native.Hlt();
+            }
         }
 
         public static void Terminate() {
             //Console.Write("Thread ");
             //Console.Write(Index.ToString());
-            Console.WriteLine(" Has Exited");
+            BootConsole.WriteLine(" Has Exited");
             Threads[Index].Terminated = true;
             Schedule_Next();
             Panic.Error("Termination Failed!");
@@ -134,16 +146,16 @@ namespace guideXOS.Misc {
         public static extern void Schedule_Next();
 
         public static void TestThread() {
-            Console.WriteLine("Non-Loop Thread Test!");
+            BootConsole.WriteLine("Non-Loop Thread Test!");
             return;
         }
 
         public static void A() {
-            for (; ; ) Console.WriteLine("Thread A");
+            for (; ; ) BootConsole.WriteLine("Thread A");
         }
 
         public static void B() {
-            for (; ; ) Console.WriteLine("Thread B");
+            for (; ; ) BootConsole.WriteLine("Thread B");
         }
 
         public static void IdleThread() {

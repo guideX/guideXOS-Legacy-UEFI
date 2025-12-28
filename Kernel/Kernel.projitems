@@ -36,6 +36,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\PS2Keyboard.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\PS2Mouse.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\Ramdisk.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\RamDiskManager.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\RTC.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\SATA.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\Serial.cs" />
@@ -51,6 +52,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)FS\EXT2.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)FS\FAT.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)FS\FileSystem.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FS\MiniRamFs.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)FS\NTFS.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)FS\TarFS.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Graph\Graphics.cs" />

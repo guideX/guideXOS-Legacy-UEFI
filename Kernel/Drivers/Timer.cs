@@ -1,34 +1,41 @@
 using guideXOS.Misc;
 namespace guideXOS.Kernel.Drivers {
+    /// <summary>
+    /// Timer
+    /// </summary>
     public static class Timer {
+        /// <summary>
+        /// Bus Clock in Hz
+        /// </summary>
         public static ulong Bus_Clock;
+        /// <summary>
+        /// CPU Clock
+        /// </summary>
         public static ulong CPU_Clock;
-
+        /// <summary>
+        /// Initialize
+        /// </summary>
         public static void Initialize() {
-            // Debug: entering Timer.Initialize
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'t');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'m');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'1');
-            
-            // SKIP timer initialization entirely for now - just set default values
-            // The timer interrupt seems to be causing crashes
-            CPU_Clock = 1000000000; // Assume 1GHz
-            Bus_Clock = 100000000;  // Assume 100MHz bus
-            
-            // Debug: done (no timer)
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'S');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'K');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'I');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'P');
-        }
+            BootConsole.WriteLine("[TIMER] INITIALIZE");
 
+            // Minimal timer init compatible with PIC IRQ0 scheduling.
+            // Program PIT channel 0 for ~1000Hz.
+            // PIT base frequency is 1193182 Hz.
+            const uint pitHz = 1193182;
+            const uint targetHz = 1000;
+            uint divisor = pitHz / targetHz;
+            if (divisor == 0) divisor = 1;
+
+            // Command: channel 0, lobyte/hibyte, mode 2 (rate generator), binary
+            Native.Out8(0x43, 0x34);
+            Native.Out8(0x40, (byte)(divisor & 0xFF));
+            Native.Out8(0x40, (byte)((divisor >> 8) & 0xFF));
+
+            CPU_Clock = 1000000000; // placeholder
+            Bus_Clock = 100000000;  // placeholder
+
+            BootConsole.WriteLine("[TIMER] PIT programmed (1000Hz)");
+        }
         private static ulong EstimateCPUSpeed() {
             ulong prev = Native.Rdtsc();
             ACPITimer.SleepMicroseconds(100000);

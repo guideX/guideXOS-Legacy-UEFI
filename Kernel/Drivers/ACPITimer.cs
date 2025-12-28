@@ -12,10 +12,13 @@
         /// </summary>
         /// <param name="ms"></param>
         public static void Sleep(ulong ms) {
+            BootConsole.WriteLine("[ACPITIMER] Sleep begin");
             if (ACPI.FADT->PMTimerLength != 4) {
-                Console.Write("ACPI Timer is not present!\n");
-                for (; ; );
+                BootConsole.WriteLine("[ACPITIMER] ACPI PM Timer not present (PMTimerLength != 4)");
+                BootConsole.WriteLine("[ACPI] Not Present");
+                for (; ; ) ;
             }
+            BootConsole.WriteLine("[ACPITIMER] ACPI PM Timer present");
             ulong delta = 0;
             ulong count = ms * (Clock / 1000);
             ulong last = Native.In32((ushort)ACPI.FADT->PMTimerBlock) & 0xFFFFFF;
@@ -41,7 +44,12 @@
         /// </summary>
         /// <param name="Microseconds"></param>
         public static void SleepMicroseconds(ulong Microseconds) {
-            if (ACPI.FADT->PMTimerLength != 4) return;
+            BootConsole.WriteLine("[ACPITIMER] SleepMicroseconds begin");
+            if (ACPI.FADT->PMTimerLength != 4) {
+                BootConsole.WriteLine("[ACPITIMER] ACPI PM Timer not present (PMTimerLength != 4) - returning");
+                return;
+            }
+            BootConsole.WriteLine("[ACPITIMER] ACPI PM Timer present");
             ulong Clock;
             ulong Counter;
             ulong Last;

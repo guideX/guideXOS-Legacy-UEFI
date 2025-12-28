@@ -17,9 +17,9 @@ namespace guideXOS.Kernel.Libraries {
         [RuntimeExport("_putchar")]
         public static void _putchar(byte chr) {
             if (chr == '\n') {
-                Console.WriteLine();
+                BootConsole.WriteLine(" ");
             } else {
-                Console.Write((char)chr);
+                BootConsole.Write((char)chr);
             }
         }
         /// <summary>

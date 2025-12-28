@@ -21,10 +21,10 @@ namespace guideXOS {
         public static void Initialize() {
             PCIDevice device = null;
 
-            Console.Write("[Intel825xx] Scanning for Intel NIC...\n");
-            Console.Write("[Intel825xx] Total PCI devices: ");
-            Console.Write(PCI.Devices.Count.ToString());
-            Console.Write("\n");
+            BootConsole.Write("[Intel825xx] Scanning for Intel NIC...\n");
+            BootConsole.Write("[Intel825xx] Total PCI devices: ");
+            BootConsole.Write(PCI.Devices.Count.ToString());
+            BootConsole.Write("\n");
 
             for (int i = 0; i < PCI.Devices.Count; i++) {
                 if (PCI.Devices[i] != null) {
@@ -33,11 +33,11 @@ namespace guideXOS {
                     
                     // Debug: Print all Intel devices
                     if (vendorID == 0x8086) {
-                        Console.Write("[Intel825xx] Found Intel device: Vendor=0x");
-                        Console.Write(vendorID.ToString("X4"));
-                        Console.Write(" Device=0x");
-                        Console.Write(deviceID.ToString("X4"));
-                        Console.Write("\n");
+                        BootConsole.Write("[Intel825xx] Found Intel device: Vendor=0x");
+                        BootConsole.Write(vendorID.ToString("X4"));
+                        BootConsole.Write(" Device=0x");
+                        BootConsole.Write(deviceID.ToString("X4"));
+                        BootConsole.Write("\n");
                     }
                     
                     if (
@@ -140,16 +140,16 @@ namespace guideXOS {
                         )
                     ) {
                         device = PCI.Devices[i];
-                        Console.Write("[Intel825xx] Matched device: 0x");
-                        Console.Write(deviceID.ToString("X4"));
-                        Console.Write("\n");
+                        BootConsole.Write("[Intel825xx] Matched device: 0x");
+                        BootConsole.Write(deviceID.ToString("X4"));
+                        BootConsole.Write("\n");
                         break;
                     }
                 }
             }
 
             if (device == null) {
-                Console.Write("[Intel825xx] No Intel NIC found\n");
+                BootConsole.Write("[Intel825xx] No Intel NIC found\n");
                 return;
             }
 
@@ -180,7 +180,7 @@ namespace guideXOS {
                     In8((byte*)(IOBase + 0x5404)),
                     In8((byte*)(IOBase + 0x5405))
                     );
-                Console.Write("[Intel825xx] This controller has no EEPROM\n");
+                BootConsole.Write("[Intel825xx] This controller has no EEPROM\n");
             } else {
                 NETv4.MAC = new MACAddress(
                     (byte)(ReadROM(0) & 0xFF),
@@ -190,7 +190,7 @@ namespace guideXOS {
                     (byte)(ReadROM(2) & 0xFF),
                     (byte)(ReadROM(2) >> 8)
                 );
-                Console.Write("[Intel825xx] EEPROM on this controller\n");
+                BootConsole.Write("[Intel825xx] EEPROM on this controller\n");
             }
 
             Linkup();
@@ -203,7 +203,7 @@ namespace guideXOS {
             WriteRegister(0x00D0, 0x1F6DC);
             ReadRegister(0xC0);
 
-            Console.Write("[Intel825xx] Configuration Done \n");
+            BootConsole.Write("[Intel825xx] Configuration Done \n");
 
             //Bug. IRQ of device doesn't work
             Interrupts.EnableInterrupt(0x20, &OnInterrupt);
@@ -212,7 +212,7 @@ namespace guideXOS {
         }
 
         public static void Reset() {
-            Console.Write("[Intel825xx] Reseting controller...\n");
+            BootConsole.Write("[Intel825xx] Reseting controller...\n");
 
             WriteRegister(0, 1 << 26);
             while (BitHelpers.IsBitSet(ReadRegister(0), 26)) ;
@@ -320,7 +320,7 @@ namespace guideXOS {
         private static void Linkup() {
             WriteRegister(0, ReadRegister(0) | 0x40);
 
-            Console.Write("[Intel825xx] Waiting for network connection \n");
+            BootConsole.Write("[Intel825xx] Waiting for network connection \n");
             while (!BitHelpers.IsBitSet(*(uint*)(IOBase + 0x08), 1)) ;
         }
 

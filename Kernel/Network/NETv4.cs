@@ -259,7 +259,7 @@ namespace guideXOS {
                         p += length;
                         //A
                         if (type == 1) {
-                            Console.Write($"[DNS] type:{(ulong)type} class:{(ulong)Class} ttl:{(ulong)ttl} length:{(ulong)length} {(ulong)ip.P1}.{(ulong)ip.P2}.{(ulong)ip.P3}.{(ulong)ip.P4}\n");
+                            BootConsole.Write($"[DNS] type:{(ulong)type} class:{(ulong)Class} ttl:{(ulong)ttl} length:{(ulong)length} {(ulong)ip.P1}.{(ulong)ip.P2}.{(ulong)ip.P3}.{(ulong)ip.P4}\n");
                             udp.Remove();
                             return ip;
                         }
@@ -416,7 +416,7 @@ namespace guideXOS {
             NETv4.IP = OfferedIP;
             NETv4.Mask = OfferedSubnetMask;
 
-            Console.Write($"[DHCP] configured. IP:{IP.P1}.{IP.P2}.{IP.P3}.{IP.P4}\n");
+            BootConsole.Write($"[DHCP] configured. IP:{IP.P1}.{IP.P2}.{IP.P3}.{IP.P4}\n");
 
             udp.Remove();
 
@@ -754,7 +754,7 @@ namespace guideXOS {
 
                                     client.Status = TCPStatus.Established;
                                     TCPSend(client, client.SndNxt, TCPFlags.TCP_ACK, null, 0);
-                                    Console.Write("Connection Established\n");
+                                    BootConsole.Write("Connection Established\n");
                                 } else {
                                     client.Status = TCPStatus.Closed;
                                 }
@@ -767,7 +767,7 @@ namespace guideXOS {
 
                                     client.Status = TCPStatus.Established;
 
-                                    Console.Write("Connection Established\n");
+                                    BootConsole.Write("Connection Established\n");
                                 }
                             } else {
                                 client.Status = TCPStatus.Closed;
@@ -815,7 +815,7 @@ namespace guideXOS {
                                                     client.SndWl2 = tcp_hdr->Seq;
 
                                                     client.Status = TCPStatus.Established;
-                                                    Console.Write("Client accepted.\n");
+                                                    BootConsole.Write("Client accepted.\n");
                                                 } else {
                                                     TCPSend(client, client.SndNxt, TCPFlags.TCP_RST, null, 0);
                                                 }

@@ -35,8 +35,8 @@ namespace guideXOS.Kernel.Drivers {
         private static int buttonStableCount = 0;
         private static int ButtonDebounceThreshold = 2; // Require 2 consistent packets before accepting button change
 
-        public static void Initialise() {
-            // Debug: entering PS2Mouse.Initialise
+        public static void Initialize() {
+            // Debug: entering PS2Mouse.Initialize
             while ((Native.In8(0x3FD) & 0x20) == 0) { }
             Native.Out8(0x3F8, (byte)'m');
             while ((Native.In8(0x3FD) & 0x20) == 0) { }

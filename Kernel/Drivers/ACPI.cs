@@ -266,7 +266,7 @@ namespace guideXOS.Kernel.Drivers {
             }
             _deviceLocated = true;
             _deviceName = "[ACPI] ACPI";
-            //Console.WriteLine("[ACPI] ACPI Initialized");
+            BootConsole.WriteLine("[ACPI] ACPI Initialized");
         }
 
         private static void ParseDT(ACPI_HEADER* hdr) {

@@ -18,27 +18,9 @@ namespace guideXOS {
         public static ConsoleColor ForegroundColor;
 
         internal static void Setup() {
-            // Debug: entering Setup
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'S');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'1');
-            
             OnWrite = null;
 
-            // Debug: before Clear
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'S');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'2');
-            
             Clear();
-
-            // Debug: after Clear, before array
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'S');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'3');
 
             ColorsFB = new uint[16]
             {
@@ -60,19 +42,7 @@ namespace guideXOS {
                 Color.White.ToArgb(),
             };
 
-            // Debug: after array
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'S');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'4');
-
             ForegroundColor = ConsoleColor.White;
-            
-            // Debug: Setup complete
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'S');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'5');
         }
 
         public static void Wait(ref bool b) {

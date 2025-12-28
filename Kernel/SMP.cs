@@ -90,7 +90,7 @@ namespace guideXOS {
                 *sidt = (ulong)idt;
             }
 
-            Console.WriteLine("[SMP] Starting all CPUs");
+            BootConsole.WriteLine("[SMP] Starting all CPUs");
             for (int i = 0; i < NumCPU; ++i) {
                 uint id = ACPI.LocalAPIC_CPUIDs[i];
                 if (id != ThisCPU) {
@@ -100,7 +100,7 @@ namespace guideXOS {
                     while (last == NumActivedProcessors) Native.Nop();
                 }
             }
-            Console.WriteLine($"[SMP] {NumCPU} CPUs started");
+            BootConsole.WriteLine($"[SMP] {NumCPU} CPUs started");
         }
     }
 }

@@ -18,11 +18,11 @@ namespace guideXOS.OS {
         /// </summary>
         public static void Initialize() {
             if (_initialized) return;
-            
-            Console.WriteLine("[CONFIG] Initializing configuration system...");
+
+            BootConsole.WriteLine("[CONFIG] Initializing configuration system...");
             
             if (SystemMode.IsLiveMode) {
-                Console.WriteLine("[CONFIG] LiveMode detected - settings will not be saved");
+                BootConsole.WriteLine("[CONFIG] LiveMode detected - settings will not be saved");
                 _initialized = true;
                 return;
             }
@@ -31,7 +31,7 @@ namespace guideXOS.OS {
             LoadConfiguration();
             
             _initialized = true;
-            Console.WriteLine("[CONFIG] Configuration system initialized");
+            BootConsole.WriteLine("[CONFIG] Configuration system initialized");
         }
         
         /// <summary>
@@ -43,9 +43,9 @@ namespace guideXOS.OS {
             try {
                 // Load UI settings
                 LoadUISettings();
-                Console.WriteLine("[CONFIG] Configuration loaded from disk");
+                BootConsole.WriteLine("[CONFIG] Configuration loaded from disk");
             } catch {
-                Console.WriteLine("[CONFIG] Error loading configuration");
+                BootConsole.WriteLine("[CONFIG] Error loading configuration");
             }
         }
         
@@ -54,21 +54,21 @@ namespace guideXOS.OS {
         /// </summary>
         public static void SaveConfiguration() {
             if (SystemMode.IsLiveMode) {
-                Console.WriteLine("[CONFIG] Cannot save in LiveMode");
+                BootConsole.WriteLine("[CONFIG] Cannot save in LiveMode");
                 return;
             }
             
             if (!SystemMode.CanWriteSettings()) {
-                Console.WriteLine("[CONFIG] Storage not writable");
+                BootConsole.WriteLine("[CONFIG] Storage not writable");
                 return;
             }
             
             try {
                 // Save UI settings
                 SaveUISettings();
-                Console.WriteLine("[CONFIG] Configuration saved to disk");
+                BootConsole.WriteLine("[CONFIG] Configuration saved to disk");
             } catch {
-                Console.WriteLine("[CONFIG] Error saving configuration");
+                BootConsole.WriteLine("[CONFIG] Error saving configuration");
             }
         }
         
@@ -103,9 +103,9 @@ namespace guideXOS.OS {
                 }
                 
                 content.Dispose();
-                Console.WriteLine("[CONFIG] UI settings loaded");
+                BootConsole.WriteLine("[CONFIG] UI settings loaded");
             } catch {
-                Console.WriteLine("[CONFIG] Error loading UI settings");
+                BootConsole.WriteLine("[CONFIG] Error loading UI settings");
             }
         }
         
@@ -127,9 +127,9 @@ namespace guideXOS.OS {
                 data.Dispose();
                 content.Dispose();
                 
-                Console.WriteLine("[CONFIG] UI settings saved");
+                BootConsole.WriteLine("[CONFIG] UI settings saved");
             } catch {
-                Console.WriteLine("[CONFIG] Error saving UI settings");
+                BootConsole.WriteLine("[CONFIG] Error saving UI settings");
             }
         }
         

@@ -24,12 +24,12 @@ namespace guideXOS.Diagnostics {
             _lastMemory = Allocator.MemoryInUse;
             _frameCount = 0;
             _lastLogTick = Timer.Ticks;
-            Console.WriteLine("[LeakDetector] Enabled - monitoring memory usage");
+            BootConsole.WriteLine("[LeakDetector] Enabled - monitoring memory usage");
         }
         
         public static void Disable() {
             _enabled = false;
-            Console.WriteLine("[LeakDetector] Disabled");
+            BootConsole.WriteLine("[LeakDetector] Disabled");
         }
         
         /// <summary>
@@ -74,27 +74,27 @@ namespace guideXOS.Diagnostics {
         }
         
         private static void LogResults() {
-            Console.WriteLine("=== Memory Leak Report (per second) ===");
+            BootConsole.WriteLine("=== Memory Leak Report (per second) ===");
             
             if (_backgroundMgrLeak > 0)
-                Console.WriteLine($"BackgroundMgr:  +{_backgroundMgrLeak / 1024} KB");
+                BootConsole.WriteLine($"BackgroundMgr:  +{_backgroundMgrLeak / 1024} KB");
             if (_inputAllLeak > 0)
-                Console.WriteLine($"InputAll:       +{_inputAllLeak / 1024} KB");
+                BootConsole.WriteLine($"InputAll:       +{_inputAllLeak / 1024} KB");
             if (_desktopUpdateLeak > 0)
-                Console.WriteLine($"Desktop.Update: +{_desktopUpdateLeak / 1024} KB");
+                BootConsole.WriteLine($"Desktop.Update: +{_desktopUpdateLeak / 1024} KB");
             if (_drawAllLeak > 0)
-                Console.WriteLine($"DrawAll:        +{_drawAllLeak / 1024} KB");
+                BootConsole.WriteLine($"DrawAll:        +{_drawAllLeak / 1024} KB");
             if (_cleanupLeak > 0)
-                Console.WriteLine($"Cleanup:        +{_cleanupLeak / 1024} KB");
+                BootConsole.WriteLine($"Cleanup:        +{_cleanupLeak / 1024} KB");
             if (_graphicsLeak > 0)
-                Console.WriteLine($"Graphics:       +{_graphicsLeak / 1024} KB");
+                BootConsole.WriteLine($"Graphics:       +{_graphicsLeak / 1024} KB");
             
             long total = _backgroundMgrLeak + _inputAllLeak + _desktopUpdateLeak + 
                         _drawAllLeak + _cleanupLeak + _graphicsLeak;
-            
-            Console.WriteLine($"TOTAL:          +{total / 1024} KB/sec");
-            Console.WriteLine($"Current Memory: {Allocator.MemoryInUse / (1024 * 1024)} MB");
-            Console.WriteLine("=======================================");
+
+            BootConsole.WriteLine($"TOTAL:          +{total / 1024} KB/sec");
+            BootConsole.WriteLine($"Current Memory: {Allocator.MemoryInUse / (1024 * 1024)} MB");
+            BootConsole.WriteLine("=======================================");
             
             // Reset accumulators
             _backgroundMgrLeak = 0;

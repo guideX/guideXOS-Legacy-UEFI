@@ -13,54 +13,10 @@ namespace guideXOS.Kernel.Drivers {
         /// Initialize
         /// </summary>
         public static void Initialize() {
-            // Debug: entering IDE.Initialize
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'i');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'d');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'e');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'1');
-            
             Ports = new();
-            
-            // Debug: after list creation
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'i');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'d');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'e');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'2');
-            
             ScanPorts(Channels.Primary);
-            
-            // Debug: after primary scan
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'i');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'d');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'e');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'3');
-            
             ScanPorts(Channels.Secondary);
-            
-            // Debug: after secondary scan
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'i');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'d');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'e');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'4');
-            
-            //if (Ports.Count == 0)
-            Console.WriteLine("[IDE] IDE controller initialized");
+            BootConsole.WriteLine("[IDE] IDE controller initialized");
         }
         /// <summary>
         /// Channels
@@ -74,16 +30,6 @@ namespace guideXOS.Kernel.Drivers {
         /// </summary>
         /// <param name="index"></param>
         public static void ScanPorts(Channels index) {
-            // Debug: entering ScanPorts
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'S');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'C');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'A');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'N');
-            
             ushort LBALowPort;
             ushort LBAMidPort;
             ushort LBAHighPort;
@@ -96,12 +42,10 @@ namespace guideXOS.Kernel.Drivers {
             ushort ErrorPort;
             ushort SectorCountPort;
             ushort BasePort = 0, ControlPort = 0;
-            
             bool Available() {
                 Native.Out8(LBALowPort, 0x88);
                 return Native.In8(LBALowPort) == 0x88;
             }
-            
             bool WaitForReadyStatus() {
                 byte status;
                 int timeout = 100000; // Timeout counter
@@ -109,11 +53,6 @@ namespace guideXOS.Kernel.Drivers {
                     status = Native.In8(StatusPort);
                     timeout--;
                     if (timeout == 0) {
-                        // Debug: timeout in WaitForReadyStatus
-                        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                        Native.Out8(0x3F8, (byte)'T');
-                        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                        Native.Out8(0x3F8, (byte)'O');
                         return false;
                     }
                 }
@@ -121,7 +60,6 @@ namespace guideXOS.Kernel.Drivers {
 
                 return true;
             }
-            
             bool WaitForIdentifyData() {
                 byte status;
                 int timeout = 100000; // Timeout counter
@@ -130,20 +68,12 @@ namespace guideXOS.Kernel.Drivers {
                     timeout--;
                     if (timeout == 0) {
                         // Debug: timeout in WaitForIdentifyData
-                        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                        Native.Out8(0x3F8, (byte)'T');
-                        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                        Native.Out8(0x3F8, (byte)'I');
                         return false;
                     }
                 }
                 while ((status & IDEDevice.DataRequest) != IDEDevice.DataRequest && (status & IDEDevice.Error) != IDEDevice.Error);
                 return ((status & IDEDevice.Error) != IDEDevice.Error);
             }
-
-            // Debug: before switch
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'1');
 
             switch (index) {
                 case Channels.Primary:
@@ -155,10 +85,6 @@ namespace guideXOS.Kernel.Drivers {
                     ControlPort = 0x376;
                     break;
             }
-
-            // Debug: after switch, before port setup
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'2');
 
             DataPort = (ushort)(BasePort + 0);
             ErrorPort = (ushort)(BasePort + 1);
@@ -172,86 +98,33 @@ namespace guideXOS.Kernel.Drivers {
             StatusPort = (ushort)(BasePort + 7);
             AltStatusPort = (ushort)(ControlPort + 6);
 
-            // Debug: before Available() check
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'3');
-
-            if (!Available()) {
-                // Debug: not available
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'N');
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'A');
+            if (!Available())
                 return;
-            }
-
-            // Debug: available, continuing
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'4');
 
             Native.Out8(ControlPort, 0);
 
-            // Debug: before device scan loop
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'5');
-
             for (byte port = 0; port < 2; port++) {
-                // Debug: scanning port
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'P');
-                
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)((byte)'0' + port)); // Print port number
-                
+                //while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                //Native.Out8(0x3F8, (byte)((byte)'0' + port)); // Print port number
                 Native.Out8(DeviceHeadPort, (byte)((port == 0) ? 0xA0 : 0xB0));
-                
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'a');
-                
                 Native.Out8(SectorCountPort, 0);
                 Native.Out8(LBALowPort, 0);
                 Native.Out8(LBAMidPort, 0);
                 Native.Out8(LBAHighPort, 0);
-                
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'b');
-                
                 Native.Out8(CommandPort, IDEDevice.IdentifyDrive);
-                
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'c');
-                
+
                 // Add a small delay after sending command
                 for (int d = 0; d < 1000; d++) {
                     Native.In8(StatusPort); // Poll status as a delay
                 }
-                
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'d');
-
                 if (
                     Native.In8(StatusPort) == 0 ||
                     !WaitForReadyStatus() ||
                     Native.In8(LBAMidPort) != 0 && Native.In8(LBAHighPort) != 0 || //ATAPI
                     !WaitForIdentifyData()
                     ) {
-                    // Debug: device not found/not compatible
-                    while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                    Native.Out8(0x3F8, (byte)'X');
                     continue;
                 }
-
-                // Debug: device found!
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'F');
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'O');
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'U');
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'N');
-                while ((Native.In8(0x3FD) & 0x20) == 0) { }
-                Native.Out8(0x3F8, (byte)'D');
 
                 ulong Size = 0;
                 var DriveInfo = new byte[4096];
@@ -260,7 +133,7 @@ namespace guideXOS.Kernel.Drivers {
 
                     Size = (*(uint*)(p + IDEDevice.MaxLBA28)) * IDEDevice.SectorSize;
 
-                    // Skip verbose Console.WriteLine - just note device found
+                    BootConsole.WriteLine("[IDE] FOUND");
                 }
                 DriveInfo.Dispose();
 
@@ -283,16 +156,6 @@ namespace guideXOS.Kernel.Drivers {
 
                 Ports.Add(drv);
             }
-            
-            // Debug: scan complete
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'D');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'O');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'N');
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)'E');
         }
     }
 
@@ -353,7 +216,7 @@ namespace guideXOS.Kernel.Drivers {
             }
 
             if ((Native.In8(StatusPort) & 0x1) != 0) {
-                Console.WriteLine($"IDE bad status");
+                BootConsole.WriteLine($"IDE bad status");
                 return false;
             }
 

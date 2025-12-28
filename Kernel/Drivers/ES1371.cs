@@ -14,7 +14,7 @@ namespace guideXOS.Kernel.Drivers {
             dev.WriteRegister(0x04, 0x04 | 0x02 | 0x01);
             BAR0 = dev.Bar0 & ~0x3;
             Buffer = (byte*)Allocator.Allocate(CacheSize);
-            Console.WriteLine($"[ES1371] BAR0:{BAR0}");
+            BootConsole.WriteLine($"[ES1371] BAR0:{BAR0}");
 
             Native.Out32(BAR0 + 0x14, 0x00020000);
             Native.Out32(BAR0 + 0x14, 0x00180000);

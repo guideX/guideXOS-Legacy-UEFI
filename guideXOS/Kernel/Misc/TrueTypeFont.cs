@@ -65,7 +65,7 @@ namespace guideXOS.Misc {
             _glyphCache = new Dictionary<char, Image>();
             
             ParseFont();
-            Console.WriteLine($"[TTF] Loaded font: {_numGlyphs} glyphs, {_unitsPerEm} units/em, size {fontSize}pt");
+            BootConsole.WriteLine($"[TTF] Loaded font: {_numGlyphs} glyphs, {_unitsPerEm} units/em, size {fontSize}pt");
         }
         
         /// <summary>
@@ -78,7 +78,7 @@ namespace guideXOS.Misc {
             
             // Verify TTF signature
             if (scalarType != 0x00010000 && scalarType != 0x74727565) { // 'true' for Mac
-                Console.WriteLine("[TTF] Not a valid TrueType font");
+                BootConsole.WriteLine("[TTF] Not a valid TrueType font");
                 return;
             }
             
@@ -112,7 +112,7 @@ namespace guideXOS.Misc {
         /// </summary>
         private void ParseHeadTable() {
             if (!_tables.ContainsKey("head")) {
-                Console.WriteLine("[TTF] Missing 'head' table");
+                BootConsole.WriteLine("[TTF] Missing 'head' table");
                 return;
             }
             
@@ -126,7 +126,7 @@ namespace guideXOS.Misc {
         /// </summary>
         private void ParseMaxpTable() {
             if (!_tables.ContainsKey("maxp")) {
-                Console.WriteLine("[TTF] Missing 'maxp' table");
+                BootConsole.WriteLine("[TTF] Missing 'maxp' table");
                 return;
             }
             
@@ -139,7 +139,7 @@ namespace guideXOS.Misc {
         /// </summary>
         private void ParseLocaTable() {
             if (!_tables.ContainsKey("loca")) {
-                Console.WriteLine("[TTF] Missing 'loca' table");
+                BootConsole.WriteLine("[TTF] Missing 'loca' table");
                 return;
             }
             
@@ -164,7 +164,7 @@ namespace guideXOS.Misc {
         /// </summary>
         private void ParseHheaTable() {
             if (!_tables.ContainsKey("hhea")) {
-                Console.WriteLine("[TTF] Missing 'hhea' table");
+                BootConsole.WriteLine("[TTF] Missing 'hhea' table");
                 return;
             }
             
@@ -177,7 +177,7 @@ namespace guideXOS.Misc {
         /// </summary>
         private void ParseHmtxTable() {
             if (!_tables.ContainsKey("hmtx")) {
-                Console.WriteLine("[TTF] Missing 'hmtx' table");
+                BootConsole.WriteLine("[TTF] Missing 'hmtx' table");
                 return;
             }
             
@@ -204,7 +204,7 @@ namespace guideXOS.Misc {
         /// </summary>
         private void ParseCmapTable() {
             if (!_tables.ContainsKey("cmap")) {
-                Console.WriteLine("[TTF] Missing 'cmap' table");
+                BootConsole.WriteLine("[TTF] Missing 'cmap' table");
                 return;
             }
             
@@ -226,7 +226,7 @@ namespace guideXOS.Misc {
             }
             
             if (cmapOffset == -1) {
-                Console.WriteLine("[TTF] No Unicode cmap found");
+                BootConsole.WriteLine("[TTF] No Unicode cmap found");
                 return;
             }
             
@@ -236,7 +236,7 @@ namespace guideXOS.Misc {
             if (format == 4) {
                 ParseCmapFormat4(cmapOffset);
             } else {
-                Console.WriteLine($"[TTF] Unsupported cmap format: {format}");
+                BootConsole.WriteLine($"[TTF] Unsupported cmap format: {format}");
             }
         }
         
@@ -291,7 +291,7 @@ namespace guideXOS.Misc {
         /// </summary>
         private GlyphOutline LoadGlyphOutline(int glyphIndex) {
             if (!_tables.ContainsKey("glyf")) {
-                Console.WriteLine("[TTF] Missing 'glyf' table");
+                BootConsole.WriteLine("[TTF] Missing 'glyf' table");
                 return new GlyphOutline();
             }
             

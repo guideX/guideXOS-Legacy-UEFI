@@ -44,18 +44,18 @@ namespace guideXOS.OS {
                     // Boot config exists - system is installed
                     _isLiveMode = false;
                     _bootDevice = "/dev/sda2"; // default system partition
-                    Console.WriteLine($"[BOOT] System Mode: Installed ({_bootDevice})");
+                    BootConsole.WriteLine($"[BOOT] System Mode: Installed ({_bootDevice})");
                 } else {
                     // No boot config - running from ramdisk (LiveMode)
                     _isLiveMode = true;
                     _bootDevice = "ramdisk";
-                    Console.WriteLine("[BOOT] System Mode: LiveMode (USB/CD)");
+                    BootConsole.WriteLine("[BOOT] System Mode: LiveMode (USB/CD)");
                 }
             } catch {
                 // On any error, assume LiveMode (safer default)
                 _isLiveMode = true;
                 _bootDevice = "ramdisk";
-                Console.WriteLine("[BOOT] System Mode: LiveMode (detection failed)");
+                BootConsole.WriteLine("[BOOT] System Mode: LiveMode (detection failed)");
             }
             
             _detected = true;
@@ -69,9 +69,9 @@ namespace guideXOS.OS {
             _detected = true;
             if (liveMode) {
                 _bootDevice = "ramdisk";
-                Console.WriteLine("[BOOT] System Mode: Forced LiveMode");
+                BootConsole.WriteLine("[BOOT] System Mode: Forced LiveMode");
             } else {
-                Console.WriteLine("[BOOT] System Mode: Forced Installed");
+                BootConsole.WriteLine("[BOOT] System Mode: Forced Installed");
             }
         }
         
