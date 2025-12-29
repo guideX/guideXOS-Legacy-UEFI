@@ -25,18 +25,6 @@ namespace guideXOS.Kernel.Drivers {
             // CRITICAL: Store in static field for reliable access
             RawBasePointer = ptr;
             
-            // Debug: Print the pointer value we received
-            ulong ptrVal = (ulong)ptr;
-            Native.Out8(0x3F8, (byte)'R');
-            Native.Out8(0x3F8, (byte)'P');
-            Native.Out8(0x3F8, (byte)':');
-            for (int shift = 60; shift >= 0; shift -= 4) {
-                int nibble = (int)((ptrVal >> shift) & 0xF);
-                char hexChar = (char)(nibble < 10 ? '0' + nibble : 'A' + nibble - 10);
-                Native.Out8(0x3F8, (byte)hexChar);
-            }
-            Native.Out8(0x3F8, (byte)'\n');
-            
             BootConsole.WriteLine("[Ramdisk] ptr field set");
 
             _baseOffsetBytes = 0;
@@ -110,19 +98,11 @@ namespace guideXOS.Kernel.Drivers {
         }
 
         public override bool Read(ulong sector, uint count, byte* p) {
-            // CRITICAL: Log IMMEDIATELY - proves method is called
-            Native.Out8(0x3F8, (byte)'R'); // Write 'R' to serial port
-            Native.Out8(0x3F8, (byte)'\n');
-            
-            BootConsole.WriteLine("[Ramdisk] Read called");
-            
             if (ptr == null) {
-                BootConsole.WriteLine("[Ramdisk] ERROR: ptr is null!");
                 return false;
             }
 
             if (p == null) {
-                BootConsole.WriteLine("[Ramdisk] ERROR: destination is null!");
                 return false;
             }
 
@@ -135,42 +115,14 @@ namespace guideXOS.Kernel.Drivers {
 
             // Bounds check only when size is known (>0)
             if (_sizeBytes != 0 && (byteOffset + byteCount) > _sizeBytes) {
-                BootConsole.WriteLine("[Ramdisk] ERROR: Out-of-bounds read");
                 return false;
             }
-            
-            BootConsole.WriteLine("[Ramdisk] About to copy bytes");
             
             // Calculate source address
             byte* src = ptr + byteOffset;
 
             CopyBytes(p, src, byteCount);
-
-            // Debug: on first sector read, print first few bytes as hex nibbles to serial
-            if (sector == 0 && count > 0) {
-                BootConsole.WriteLine("[Ramdisk] Sector0 first bytes:");
-                for (int i = 0; i < 8; i++) {
-                    byte b = p[i];
-                    char hi = (char)(((b >> 4) & 0xF) < 10 ? '0' + ((b >> 4) & 0xF) : 'A' + (((b >> 4) & 0xF) - 10));
-                    char lo = (char)((b & 0xF) < 10 ? '0' + (b & 0xF) : 'A' + ((b & 0xF) - 10));
-                    Native.Out8(0x3F8, (byte)hi);
-                    Native.Out8(0x3F8, (byte)lo);
-                    Native.Out8(0x3F8, (byte)' ');
-                }
-                Native.Out8(0x3F8, (byte)'\n');
-            }
             
-            // CRITICAL: Check first byte of EVERY read to detect zero-filled sectors
-            if (count > 0) {
-                byte firstByte = *p;
-                if (firstByte == 0) {
-                    BootConsole.WriteLine("[Ramdisk] WARNING: Read returned ZERO byte!");
-                } else {
-                    BootConsole.WriteLine("[Ramdisk] Read OK (non-zero byte)");
-                }
-            }
-            
-            BootConsole.WriteLine("[Ramdisk] Copy completed");
             return true;
         }
 
@@ -194,22 +146,7 @@ namespace guideXOS.Kernel.Drivers {
         /// </summary>
         public byte* GetRawPointer() {
             // Use static field to avoid GC/object relocation issues
-            byte* result = RawBasePointer;
-            
-            // Debug: Print the pointer value
-            ulong ptrVal = (ulong)result;
-            Native.Out8(0x3F8, (byte)'P');
-            Native.Out8(0x3F8, (byte)'T');
-            Native.Out8(0x3F8, (byte)'R');
-            Native.Out8(0x3F8, (byte)':');
-            for (int shift = 60; shift >= 0; shift -= 4) {
-                int nibble = (int)((ptrVal >> shift) & 0xF);
-                char hexChar = (char)(nibble < 10 ? '0' + nibble : 'A' + nibble - 10);
-                Native.Out8(0x3F8, (byte)hexChar);
-            }
-            Native.Out8(0x3F8, (byte)'\n');
-            
-            return result;
+            return RawBasePointer;
         }
     }
 }

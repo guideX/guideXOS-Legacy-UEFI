@@ -65,27 +65,46 @@ namespace guideXOS.FS {
                 return null;
             }
             
-            BootConsole.WriteLine("[File.ReadAllBytes] Instance is valid, calling virtual method");
+            BootConsole.WriteLine("[File.ReadAllBytes] Instance type check");
             
-            // WORKAROUND: Try direct cast to TarFS to bypass virtual dispatch
-            try {
-                TarFS tarfs = Instance as TarFS;
-                if (tarfs != null) {
-                    BootConsole.WriteLine("[File.ReadAllBytes] Using direct TarFS cast");
-                    return tarfs.ReadAllBytes(name);
-                } else {
-                    BootConsole.WriteLine("[File.ReadAllBytes] Instance is not TarFS, using virtual call");
+            // WORKAROUND: Try direct cast to RdskFS first (avoids virtual dispatch issues)
+            RdskFS rdskfs = Instance as RdskFS;
+            if (rdskfs != null) {
+                BootConsole.WriteLine("[File.ReadAllBytes] Direct cast to RdskFS succeeded");
+                try {
+                    byte[] result = rdskfs.ReadAllBytes(name);
+                    BootConsole.WriteLine("[File.ReadAllBytes] RdskFS.ReadAllBytes returned");
+                    return result;
+                } catch {
+                    BootConsole.WriteLine("[File.ReadAllBytes] RdskFS.ReadAllBytes threw exception!");
+                    return null;
                 }
-            } catch {
-                BootConsole.WriteLine("[File.ReadAllBytes] Cast to TarFS failed!");
             }
             
+            // Fallback: try TarFS
+            TarFS tarfs = Instance as TarFS;
+            if (tarfs != null) {
+                BootConsole.WriteLine("[File.ReadAllBytes] Direct cast to TarFS succeeded");
+                try {
+                    byte[] result = tarfs.ReadAllBytes(name);
+                    BootConsole.WriteLine("[File.ReadAllBytes] TarFS.ReadAllBytes returned");
+                    return result;
+                } catch {
+                    BootConsole.WriteLine("[File.ReadAllBytes] TarFS.ReadAllBytes threw exception!");
+                    return null;
+                }
+            }
+            
+            BootConsole.WriteLine("[File.ReadAllBytes] WARNING: Could not cast to known types, trying virtual dispatch");
+            
+            // Last resort: try virtual dispatch
             try {
+                BootConsole.WriteLine("[File.ReadAllBytes] Attempting virtual dispatch...");
                 byte[] result = Instance.ReadAllBytes(name);
-                BootConsole.WriteLine("[File.ReadAllBytes] Virtual method returned");
+                BootConsole.WriteLine("[File.ReadAllBytes] Virtual method returned successfully");
                 return result;
             } catch {
-                BootConsole.WriteLine("[File.ReadAllBytes] EXCEPTION in virtual method!");
+                BootConsole.WriteLine("[File.ReadAllBytes] Virtual dispatch FAILED!");
                 return null;
             }
         }
