@@ -1,3 +1,4 @@
+using guideXOS;
 using guideXOS.Misc;
 namespace guideXOS.Kernel.Drivers {
     /// <summary>
@@ -65,6 +66,19 @@ namespace guideXOS.Kernel.Drivers {
         }
 
         public static void Sleep(ulong millisecond) {
+            // In UEFI mode with masked interrupts, Ticks won't advance
+            // Use a simple busy-wait loop instead
+            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                // Simple busy-wait: approximately 1 million iterations per millisecond
+                // This is a rough approximation but ensures we don't hang
+                ulong iterations = millisecond * 100000;
+                for (ulong i = 0; i < iterations; i++) {
+                    Native.Nop();
+                }
+                return;
+            }
+            
+            // Legacy mode: use timer ticks
             ulong T = Ticks;
             while (Ticks < (T + millisecond)) Native.Hlt();
         }

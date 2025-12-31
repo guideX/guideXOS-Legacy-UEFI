@@ -95,8 +95,7 @@ unsafe class Program {
         //Sized width to 512
         BootConsole.WriteLine("[CURSOR] Creating cursor images");
         
-        // CRITICAL: Check if File.Instance is available before trying to load cursors
-        BootConsole.WriteLine("[CURSOR] Checking File.Instance");
+        // Check if File.Instance is available
         if (File.Instance == null) {
             BootConsole.WriteLine("[CURSOR] File.Instance is NULL - using fallback cursors");
             
@@ -115,42 +114,27 @@ unsafe class Program {
             
             BootConsole.WriteLine("[CURSOR] Fallback cursors created");
         } else {
-            // Try to load PNG cursors from filesystem (works in both Legacy and UEFI with cached TarFS)
+            // Load PNG cursors from filesystem (works in both Legacy and UEFI with managed decoder)
             BootConsole.WriteLine("[CURSOR] Loading PNG cursors from filesystem");
             
+            // Load cursor
+            bool cursorLoaded = false;
             try { 
-                BootConsole.WriteLine("[CURSOR] Loading Images/Cursor.png");
-                BootConsole.WriteLine("[CURSOR] About to call File.ReadAllBytes");
-                
-                byte[] cursorData = null;
-                try {
-                    cursorData = File.ReadAllBytes("Images/Cursor.png");
-                    BootConsole.WriteLine("[CURSOR] File.ReadAllBytes returned");
-                } catch {
-                    BootConsole.WriteLine("[CURSOR] EXCEPTION in File.ReadAllBytes call!");
-                }
-                
+                byte[] cursorData = File.ReadAllBytes("Images/Cursor.png");
                 if (cursorData != null) {
-                    BootConsole.WriteLine("[CURSOR] Cursor data loaded, creating PNG");
+                    BootConsole.WriteLine("[CURSOR] Creating PNG object");
                     Cursor = new PNG(cursorData);
                     cursorData.Dispose();
-                    BootConsole.WriteLine("[CURSOR] Loaded Cursor.png successfully");
-                } else {
-                    BootConsole.WriteLine("[CURSOR] Cursor data is null - using fallback");
-                    // Use fallback cursor
-                    Cursor = new Image(16, 16);
-                    for (int y = 0; y < 16; y++) {
-                        for (int x = 0; x < 16; x++) {
-                            if (x + y < 16) {
-                                Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF);
-                            }
-                        }
-                    }
+                    BootConsole.WriteLine("[CURSOR] Loaded Cursor.png");
+                    cursorLoaded = true;
                 }
             } catch { 
+                BootConsole.WriteLine("[CURSOR] Exception loading Cursor.png");
+            }
+            
+            if (!cursorLoaded) {
                 BootConsole.WriteLine("[CURSOR] Failed to load Cursor.png, using fallback");
                 Cursor = new Image(16, 16);
-                // Fill with white arrow
                 for (int y = 0; y < 16; y++) {
                     for (int x = 0; x < 16; x++) {
                         if (x + y < 16) {
@@ -161,35 +145,39 @@ unsafe class Program {
             }
             
             try { 
-                BootConsole.WriteLine("[CURSOR] Loading Images/Grab.png");
                 byte[] grabData = File.ReadAllBytes("Images/Grab.png");
                 CursorMoving = new PNG(grabData);
                 grabData.Dispose();
-                BootConsole.WriteLine("[CURSOR] Loaded Grab.png successfully");
+                BootConsole.WriteLine("[CURSOR] Loaded Grab.png");
             } catch { 
                 CursorMoving = Cursor;
-                BootConsole.WriteLine("[CURSOR] Failed to load Grab.png, using fallback");
             }
             
             try { 
-                BootConsole.WriteLine("[CURSOR] Loading Images/Busy.png");
                 byte[] busyData = File.ReadAllBytes("Images/Busy.png");
                 CursorBusy = new PNG(busyData);
                 busyData.Dispose();
-                BootConsole.WriteLine("[CURSOR] Loaded Busy.png successfully");
+                BootConsole.WriteLine("[CURSOR] Loaded Busy.png");
             } catch { 
                 CursorBusy = Cursor;
-                BootConsole.WriteLine("[CURSOR] Failed to load Busy.png, using fallback");
             }
         }
         
         BootConsole.WriteLine("[CURSOR] All cursors created");
         
-        // Only initialize BitFont in Legacy mode (fonts require more complex initialization)
-        if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-            BitFont.Initialize();
-            string CustomCharset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
-            BitFont.RegisterBitFont(new BitFontDescriptor("Enludo", CustomCharset, File.ReadAllBytes("Fonts/enludo.btf"), 16));
+        // Initialize BitFont (works in both modes now with managed PNG decoder)
+        if (File.Instance != null) {
+            try {
+                BitFont.Initialize();
+                string CustomCharset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+                byte[] fontData = File.ReadAllBytes("Fonts/enludo.btf");
+                if (fontData != null) {
+                    BitFont.RegisterBitFont(new BitFontDescriptor("Enludo", CustomCharset, fontData, 16));
+                    BootConsole.WriteLine("[FONT] BitFont initialized");
+                }
+            } catch {
+                BootConsole.WriteLine("[FONT] BitFont initialization failed");
+            }
         }
 
         //Terminal = null;
@@ -372,18 +360,31 @@ unsafe class Program {
         //Lockscreen.Run();
         FConsole = null; // Don't create console here - let it be created on-demand
 
-        // Initialize background rotation manager (Legacy only - requires file system)
-        if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-            BootConsole.WriteLine("[SMAIN] Initializing background manager");
-            BackgroundRotationManager.Initialize();
-            // Initialize module system (built-in modules)
-            guideXOS.Modules.ModuleManager.InitializeBuiltins();
-            // Initialize cached desktop icons once to prevent per-frame allocations
-            RefreshCachedIcons();
-            _lastIconCacheRefresh = Timer.Ticks;
+        // Initialize background rotation manager and icons
+        if (File.Instance != null) {
+            BootConsole.WriteLine("[SMAIN] Initializing background manager and icons");
+            
+            if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
+                BackgroundRotationManager.Initialize();
+                // Initialize module system (built-in modules)
+                guideXOS.Modules.ModuleManager.InitializeBuiltins();
+            }
+            
+            // Initialize cached desktop icons (works in both modes with managed PNG)
+            try {
+                RefreshCachedIcons();
+                _lastIconCacheRefresh = Timer.Ticks;
+                BootConsole.WriteLine("[SMAIN] Icons initialized");
+            } catch {
+                BootConsole.WriteLine("[SMAIN] Icon initialization failed - using fallback");
+                _cachedDocumentIcon = new Image(48, 48);
+                _cachedFolderIcon = new Image(48, 48);
+                _cachedImageIcon = new Image(48, 48);
+                _cachedAudioIcon = new Image(48, 48);
+            }
         } else {
-            BootConsole.WriteLine("[UEFI] Skipping file-based features");
-            // Set up dummy icons for UEFI mode
+            BootConsole.WriteLine("[SMAIN] No filesystem - using fallback icons");
+            // Set up dummy icons
             _cachedDocumentIcon = new Image(48, 48);
             _cachedFolderIcon = new Image(48, 48);
             _cachedImageIcon = new Image(48, 48);
@@ -542,33 +543,21 @@ unsafe class Program {
             try {
                 frameCounter++;
 
-                // Log EVERY frame for first 10 frames to see if loop is working
-                if (frameCounter <= 10) {
-                    BootConsole.WriteLine($"[RENDER] Frame {frameCounter}");
-                }
+                // Reduce serial output in UEFI mode to improve performance
+                // Only log first frame and every 600 frames (~10 seconds)
+                bool shouldLog = (frameCounter == 1) || (frameCounter % 600 == 0);
 
-                // Every 60 frames (~1 second), output a marker
-                if (frameCounter % 60 == 0) {
+                if (shouldLog && BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
                     BootConsole.WriteLine($"[RENDER] Frame {frameCounter}");
-                }
-
-                // Log each step for first frame
-                if (frameCounter == 1) {
-                    BootConsole.WriteLine("[RENDER] Step 1: Icon cache check");
                 }
 
                 // FIXED: Periodically refresh cached icons to prevent memory buildup (optional)
-                // Skip in UEFI mode
-                if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy && UISettings.EnableDesktopIconCacheRefresh) {
+                if (UISettings.EnableDesktopIconCacheRefresh && File.Instance != null) {
                     ulong intervalMs = (ulong)UISettings.DesktopIconCacheRefreshIntervalMinutes * 60000UL;
                     if (Timer.Ticks - _lastIconCacheRefresh >= intervalMs) {
                         RefreshCachedIcons();
                         _lastIconCacheRefresh = Timer.Ticks;
                     }
-                }
-
-                if (frameCounter == 1) {
-                    BootConsole.WriteLine("[RENDER] Step 2: Background update (skip in UEFI)");
                 }
 
                 // Update background rotation manager (handles automatic rotation and fade transitions)
@@ -581,21 +570,12 @@ unsafe class Program {
                     }
                 }
 
-                if (frameCounter == 1) {
-                    BootConsole.WriteLine("[RENDER] Step 3: Window input");
-                }
-
                 // Per-frame input pass for all windows
                 WindowManager.MouseHandled = false;
                 try {
                     WindowManager.InputAll();
                 } catch {
-                    // Log input error but continue
-                    BootConsole.WriteLine("Input handling error");
-                }
-
-                if (frameCounter == 1) {
-                    BootConsole.WriteLine("[RENDER] Step 4: Flush pending");
+                    // Ignore input errors
                 }
 
                 // Skip FlushPendingCreates in UEFI mode - might hang
@@ -605,10 +585,6 @@ unsafe class Program {
                     } catch {
                         // Ignore window creation errors
                     }
-                }
-
-                if (frameCounter == 1) {
-                    BootConsole.WriteLine("[RENDER] Step 5: Audio (skip in UEFI)");
                 }
 
                 // Service audio playback from main loop
@@ -621,36 +597,14 @@ unsafe class Program {
                     }
                 }
 
-                if (frameCounter == 1) {
-                    BootConsole.WriteLine("[RENDER] Step 6: Clear screen");
-                }
-
                 //clear screen
                 try {
-                    // UEFI mode: Use fast direct framebuffer clear instead of Graphics.Clear()
-                    if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
-                        // Direct memset-style clear - MUCH faster than Graphics.Clear()
-                        uint* fb = Framebuffer.VideoMemory;
-                        int totalPixels = Framebuffer.Width * Framebuffer.Height;
-                        for (int i = 0; i < totalPixels; i++) {
-                            fb[i] = 0x00000000; // Black
-                        }
-                    } else {
-                        // Legacy mode: Use Graphics.Clear() which might have optimizations
-                        Framebuffer.Graphics.Clear(0x0);
-                    }
-                    
-                    if (frameCounter == 1) {
-                        BootConsole.WriteLine("[RENDER] Step 7: Screen cleared");
-                    }
+                    // Use Stosd for fast clear - much faster than per-pixel loop
+                    Native.Stosd(Framebuffer.VideoMemory, 0x00000000, (ulong)(Framebuffer.Width * Framebuffer.Height));
                 } catch {
                     // Critical: if we can't clear screen, skip frame
                     Thread.Sleep(1);
                     continue;
-                }
-
-                if (frameCounter == 1) {
-                    BootConsole.WriteLine("[RENDER] Step 8: Draw wallpaper");
                 }
 
                 //draw carpet or wallpaper - use BackgroundRotationManager for fade effects
@@ -658,31 +612,17 @@ unsafe class Program {
                     if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
                         BackgroundRotationManager.DrawBackground();
                     } else {
-                        // UEFI mode: Just draw the wallpaper directly
-                        if (frameCounter == 1) {
-                            BootConsole.WriteLine("[RENDER] Step 8a: Check wallpaper");
-                        }
-                        
+                        // UEFI mode: Draw wallpaper directly using fast non-alpha method
                         if (Wallpaper != null) {
-                            if (frameCounter == 1) {
-                                BootConsole.WriteLine("[RENDER] Step 8b: About to draw wallpaper");
-                            }
-                            Framebuffer.Graphics.DrawImage(0, 0, Wallpaper);
-                            if (frameCounter == 1) {
-                                BootConsole.WriteLine("[RENDER] Step 8c: Wallpaper drawn");
-                            }
+                            // Fast copy: No alpha blending needed for full-screen wallpaper
+                            Framebuffer.Graphics.DrawImage(0, 0, Wallpaper, false);
                         } else {
-                            if (frameCounter == 1) {
-                                BootConsole.WriteLine("[RENDER] Step 8d: Using solid color");
-                            }
-                            Framebuffer.Graphics.Clear(0xFF0D7D77); // Teal background
+                            // Fallback: teal gradient
+                            Framebuffer.Graphics.Clear(0xFF0D7D77);
                         }
                     }
                 } catch {
                     // Draw solid color fallback
-                    if (frameCounter == 1) {
-                        BootConsole.WriteLine("[RENDER] Step 8e: Wallpaper error, using fallback");
-                    }
                     try {
                         Framebuffer.Graphics.Clear(0xFF0D7D77);
                     } catch { }
@@ -728,8 +668,7 @@ unsafe class Program {
                 try {
                     WindowManager.DrawAllExceptTaskManager();
                 } catch {
-                    // Log but continue if window drawing fails
-                    BootConsole.WriteLine("Window drawing error");
+                    // Ignore window drawing errors
                 }
 
                 // 2. Workspace switcher (if visible) - appears on top of regular windows
@@ -766,19 +705,9 @@ unsafe class Program {
 
                 //refresh screen
                 try {
-                    // Log every 60th update to verify we're calling it
-                    if (frameCounter % 60 == 0) {
-                        BootConsole.WriteLine("[RENDER] Calling Framebuffer.Update()");
-                    }
                     Framebuffer.Update();
-
-                    // Success marker
-                    if (frameCounter % 60 == 0) {
-                        BootConsole.WriteLine("[RENDER] Update() succeeded");
-                    }
                 } catch {
                     // Critical: if we can't update screen, skip frame
-                    BootConsole.WriteLine("[RENDER] Update() FAILED!");
                     Thread.Sleep(1);
                     continue;
                 }
@@ -795,7 +724,6 @@ unsafe class Program {
                 }
             } catch {
                 // Catch any unhandled exception in main loop
-                BootConsole.WriteLine("Critical error in main loop");
                 Thread.Sleep(10); // Prevent tight error loop
             }
         }
@@ -807,35 +735,34 @@ unsafe class Program {
     /// CRITICAL: Create new icons BEFORE disposing old ones to prevent Desktop.Update from receiving null/disposed icons
     /// </summary>
     private static void RefreshCachedIcons() {
-        if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-            try {
-                // STEP 1: Create new icons first
-                Image newDocumentIcon = Icons.DocumentIcon(_cachedIconSize);
-                Image newFolderIcon = Icons.FolderIcon(_cachedIconSize);
-                Image newImageIcon = Icons.ImageIcon(_cachedIconSize);
-                Image newAudioIcon = Icons.AudioIcon(_cachedIconSize);
+        // Works in both Legacy and UEFI modes now (with managed PNG decoder)
+        try {
+            // STEP 1: Create new icons first
+            Image newDocumentIcon = Icons.DocumentIcon(_cachedIconSize);
+            Image newFolderIcon = Icons.FolderIcon(_cachedIconSize);
+            Image newImageIcon = Icons.ImageIcon(_cachedIconSize);
+            Image newAudioIcon = Icons.AudioIcon(_cachedIconSize);
 
-                // STEP 2: Save old icons for disposal
-                Image oldDocumentIcon = _cachedDocumentIcon;
-                Image oldFolderIcon = _cachedFolderIcon;
-                Image oldImageIcon = _cachedImageIcon;
-                Image oldAudioIcon = _cachedAudioIcon;
+            // STEP 2: Save old icons for disposal
+            Image oldDocumentIcon = _cachedDocumentIcon;
+            Image oldFolderIcon = _cachedFolderIcon;
+            Image oldImageIcon = _cachedImageIcon;
+            Image oldAudioIcon = _cachedAudioIcon;
 
-                // STEP 3: Atomically swap to new icons (prevents Desktop.Update from seeing null)
-                _cachedDocumentIcon = newDocumentIcon;
-                _cachedFolderIcon = newFolderIcon;
-                _cachedImageIcon = newImageIcon;
-                _cachedAudioIcon = newAudioIcon;
+            // STEP 3: Atomically swap to new icons (prevents Desktop.Update from seeing null)
+            _cachedDocumentIcon = newDocumentIcon;
+            _cachedFolderIcon = newFolderIcon;
+            _cachedImageIcon = newImageIcon;
+            _cachedAudioIcon = newAudioIcon;
 
-                // STEP 4: Now safely dispose old icons (after swap is complete)
-                if (oldDocumentIcon != null) oldDocumentIcon.Dispose();
-                if (oldFolderIcon != null) oldFolderIcon.Dispose();
-                if (oldImageIcon != null) oldImageIcon.Dispose();
-                if (oldAudioIcon != null) oldAudioIcon.Dispose();
-            } catch {
-                // If icon creation fails, keep using old icons rather than having null icons
-                BootConsole.WriteLine("Icon cache refresh failed - keeping old icons");
-            }
+            // STEP 4: Now safely dispose old icons (after swap is complete)
+            if (oldDocumentIcon != null) oldDocumentIcon.Dispose();
+            if (oldFolderIcon != null) oldFolderIcon.Dispose();
+            if (oldImageIcon != null) oldImageIcon.Dispose();
+            if (oldAudioIcon != null) oldAudioIcon.Dispose();
+        } catch {
+            // If icon creation fails, keep using old icons rather than having null icons
+            BootConsole.WriteLine("Icon cache refresh failed - keeping old icons");
         }
     }
     /// <summary>

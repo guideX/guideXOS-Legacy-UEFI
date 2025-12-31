@@ -78,6 +78,8 @@
     <Compile Include="$(MSBuildThisFileDirectory)Misc\IDT.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Misc\IFont.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Misc\Interrupts.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\LodePNG.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\ManagedPNG.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Misc\MMIO.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Misc\Multiboot.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Misc\Native.cs" />

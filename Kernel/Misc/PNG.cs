@@ -1,3 +1,4 @@
+using guideXOS;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using guideXOS.Kernel.Drivers;
@@ -37,21 +38,78 @@ namespace guideXOS.Misc {
         }
 
         public PNG(byte[] file, LodePNGColorType type = LodePNGColorType.LCT_RGBA, uint bitDepth = 8) {
-            // Pre-validate PNG and size to avoid calling lodepng when obviously bad; this avoids native spam "lodepng: memory allocation failed".
+            // Validate input first
+            if (file == null || file.Length < 33) {
+                BootConsole.WriteLine("[PNG] Invalid input - fallback");
+                BuildFallback(out RawData, out int fw, out int fh);
+                Width = fw; Height = fh; Bpp = 4;
+                return;
+            }
+            
+            // Pre-validate PNG header and get dimensions
             bool canDecode = TryGetIHDRDims(file, out uint ihdrW, out uint ihdrH);
-            if (!canDecode) { BuildFallback(out RawData, out int fw, out int fh); Width = fw; Height = fh; Bpp = 4; return; }
+            if (!canDecode) {
+                BootConsole.WriteLine("[PNG] No valid header - fallback");
+                BuildFallback(out RawData, out int fw, out int fh);
+                Width = fw; Height = fh; Bpp = 4;
+                return;
+            }
+            
+            // UEFI mode: Use managed LodePNG decoder (no native code required)
+            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                BootConsole.WriteLine("[PNG] UEFI: Using managed LodePNG decoder");
+                try {
+                    var decoded = new LodePNG(file);
+                    if (decoded.RawData != null && decoded.Width > 0 && decoded.Height > 0) {
+                        Width = decoded.Width;
+                        Height = decoded.Height;
+                        Bpp = decoded.Bpp;
+                        RawData = decoded.RawData;
+                        // Don't dispose decoded - we're taking ownership of RawData
+                        BootConsole.WriteLine("[PNG] UEFI: Decoded " + Width.ToString() + "x" + Height.ToString());
+                        return;
+                    }
+                } catch {
+                    BootConsole.WriteLine("[PNG] UEFI: LodePNG decode failed");
+                }
+                
+                // Fallback to placeholder if decode fails
+                BuildFallback(out RawData, out int fw, out int fh);
+                Width = fw; Height = fh; Bpp = 4;
+                return;
+            }
+            
+            // Legacy mode: Use native lodepng
             ulong pixelCount = (ulong)ihdrW * (ulong)ihdrH;
             if (pixelCount == 0 || pixelCount > (ulong)int.MaxValue || pixelCount * 4UL > Allocator.MemorySize / 2) {
-                BuildFallback(out RawData, out int fw, out int fh); Width = fw; Height = fh; Bpp = 4; return;
+                BuildFallback(out RawData, out int fw, out int fh);
+                Width = fw; Height = fh; Bpp = 4;
+                return;
             }
 
             fixed (byte* p = file) {
                 uint* decoded; uint w, h;
                 lodepng_decode_memory(out decoded, out w, out h, p, file.Length, type, bitDepth);
-                if (decoded == null || w == 0 || h == 0 || w > 8192 || h > 8192) { BuildFallback(out RawData, out int fw, out int fh); Width = fw; Height = fh; Bpp = 4; return; }
-                ulong pc = (ulong)w * (ulong)h; if (pc > (ulong)int.MaxValue || pc * 4UL > Allocator.MemorySize / 2) { Allocator.Free((System.IntPtr)decoded); BuildFallback(out RawData, out int fw2, out int fh2); Width = fw2; Height = fh2; Bpp = 4; return; }
+                if (decoded == null || w == 0 || h == 0 || w > 8192 || h > 8192) {
+                    BuildFallback(out RawData, out int fw, out int fh);
+                    Width = fw; Height = fh; Bpp = 4;
+                    return;
+                }
+                ulong pc = (ulong)w * (ulong)h;
+                if (pc > (ulong)int.MaxValue || pc * 4UL > Allocator.MemorySize / 2) {
+                    Allocator.Free((System.IntPtr)decoded);
+                    BuildFallback(out RawData, out int fw2, out int fh2);
+                    Width = fw2; Height = fh2; Bpp = 4;
+                    return;
+                }
                 RawData = new int[pc];
-                for (uint y2 = 0; y2 < h; y2++) { uint rowOff = y2 * w; for (uint x2 = 0; x2 < w; x2++) { uint px = decoded[rowOff + x2]; RawData[(int)(rowOff + x2)] = (int)((px & 0xFF000000) | (NETv4.SwapLeftRight(px & 0x00FFFFFF)) >> 8); } }
+                for (uint y2 = 0; y2 < h; y2++) {
+                    uint rowOff = y2 * w;
+                    for (uint x2 = 0; x2 < w; x2++) {
+                        uint px = decoded[rowOff + x2];
+                        RawData[(int)(rowOff + x2)] = (int)((px & 0xFF000000) | (NETv4.SwapLeftRight(px & 0x00FFFFFF)) >> 8);
+                    }
+                }
                 Allocator.Free((System.IntPtr)decoded);
                 Width = (int)w; Height = (int)h; Bpp = 4;
             }
