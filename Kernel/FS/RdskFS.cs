@@ -22,6 +22,7 @@ namespace guideXOS.FS {
         public RdskFS()
         {
             BootConsole.WriteLine("[RdskFS] Constructor called");
+            FileSystemType = FS_TYPE_RDSK;
             
             // Get direct ramdisk reference
             _ramdisk = Ramdisk.Instance;

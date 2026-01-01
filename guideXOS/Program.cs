@@ -95,8 +95,28 @@ unsafe class Program {
         //Sized width to 512
         BootConsole.WriteLine("[CURSOR] Creating cursor images");
         
-        // Check if File.Instance is available
-        if (File.Instance == null) {
+        // UEFI mode: Skip PNG decoding (hangs) - use simple fallback cursors
+        if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+            BootConsole.WriteLine("[CURSOR] UEFI mode - using simple fallback cursors");
+            
+            // Create simple white arrow cursor
+            Cursor = new Image(16, 16);
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    // Simple arrow shape: x + y < 16 and x < y + 3
+                    if (x + y < 16 && x < y + 3) {
+                        Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF);
+                    }
+                }
+            }
+            
+            CursorMoving = Cursor;
+            CursorBusy = Cursor;
+            
+            BootConsole.WriteLine("[CURSOR] Fallback cursors created (UEFI)");
+        }
+        // Check if File.Instance is available (Legacy mode)
+        else if (File.Instance == null) {
             BootConsole.WriteLine("[CURSOR] File.Instance is NULL - using fallback cursors");
             
             // Create simple fallback cursors
@@ -165,8 +185,8 @@ unsafe class Program {
         
         BootConsole.WriteLine("[CURSOR] All cursors created");
         
-        // Initialize BitFont (works in both modes now with managed PNG decoder)
-        if (File.Instance != null) {
+        // Initialize BitFont - skip in UEFI mode (file access issues)
+        if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy && File.Instance != null) {
             try {
                 BitFont.Initialize();
                 string CustomCharset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
@@ -178,6 +198,8 @@ unsafe class Program {
             } catch {
                 BootConsole.WriteLine("[FONT] BitFont initialization failed");
             }
+        } else if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+            BootConsole.WriteLine("[FONT] Skipped (UEFI mode)");
         }
 
         //Terminal = null;
@@ -368,15 +390,22 @@ unsafe class Program {
                 BackgroundRotationManager.Initialize();
                 // Initialize module system (built-in modules)
                 guideXOS.Modules.ModuleManager.InitializeBuiltins();
-            }
-            
-            // Initialize cached desktop icons (works in both modes with managed PNG)
-            try {
-                RefreshCachedIcons();
-                _lastIconCacheRefresh = Timer.Ticks;
-                BootConsole.WriteLine("[SMAIN] Icons initialized");
-            } catch {
-                BootConsole.WriteLine("[SMAIN] Icon initialization failed - using fallback");
+                
+                // Initialize cached desktop icons (Legacy only - PNG decoding works)
+                try {
+                    RefreshCachedIcons();
+                    _lastIconCacheRefresh = Timer.Ticks;
+                    BootConsole.WriteLine("[SMAIN] Icons initialized");
+                } catch {
+                    BootConsole.WriteLine("[SMAIN] Icon initialization failed - using fallback");
+                    _cachedDocumentIcon = new Image(48, 48);
+                    _cachedFolderIcon = new Image(48, 48);
+                    _cachedImageIcon = new Image(48, 48);
+                    _cachedAudioIcon = new Image(48, 48);
+                }
+            } else {
+                // UEFI mode: Skip PNG icons - use simple fallback
+                BootConsole.WriteLine("[SMAIN] UEFI mode - using fallback icons (no PNG)");
                 _cachedDocumentIcon = new Image(48, 48);
                 _cachedFolderIcon = new Image(48, 48);
                 _cachedImageIcon = new Image(48, 48);
@@ -547,8 +576,12 @@ unsafe class Program {
                 // Only log first frame and every 600 frames (~10 seconds)
                 bool shouldLog = (frameCounter == 1) || (frameCounter % 600 == 0);
 
-                if (shouldLog && BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-                    BootConsole.WriteLine($"[RENDER] Frame {frameCounter}");
+                if (shouldLog) {
+                    // RAW serial output for debugging
+                    Native.Out8(0x3F8, (byte)'F');
+                    Native.Out8(0x3F8, (byte)'R');
+                    Native.Out8(0x3F8, (byte)'M');
+                    Native.Out8(0x3F8, (byte)'\n');
                 }
 
                 // FIXED: Periodically refresh cached icons to prevent memory buildup (optional)
@@ -599,8 +632,11 @@ unsafe class Program {
 
                 //clear screen
                 try {
-                    // Use Stosd for fast clear - much faster than per-pixel loop
-                    Native.Stosd(Framebuffer.VideoMemory, 0x00000000, (ulong)(Framebuffer.Width * Framebuffer.Height));
+                    // In UEFI mode, skip clear - we'll draw full screen anyway
+                    if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
+                        // Use Stosd for fast clear - much faster than per-pixel loop
+                        Native.Stosd(Framebuffer.VideoMemory, 0x00000000, (ulong)(Framebuffer.Width * Framebuffer.Height));
+                    }
                 } catch {
                     // Critical: if we can't clear screen, skip frame
                     Thread.Sleep(1);
@@ -612,13 +648,20 @@ unsafe class Program {
                     if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
                         BackgroundRotationManager.DrawBackground();
                     } else {
-                        // UEFI mode: Draw wallpaper directly using fast non-alpha method
-                        if (Wallpaper != null) {
-                            // Fast copy: No alpha blending needed for full-screen wallpaper
-                            Framebuffer.Graphics.DrawImage(0, 0, Wallpaper, false);
-                        } else {
-                            // Fallback: teal gradient
-                            Framebuffer.Graphics.Clear(0xFF0D7D77);
+                        // UEFI mode: Draw directly to framebuffer for testing
+                        // First, draw a solid color to prove we can write to framebuffer
+                        uint* fb = Framebuffer.VideoMemory;
+                        int fbW = Framebuffer.Width;
+                        int fbH = Framebuffer.Height;
+                        
+                        // Draw teal background directly to framebuffer
+                        for (int y = 0; y < fbH; y++) {
+                            // Calculate gradient color (teal gradient)
+                            int t = (y * 128) / fbH; // 0-128 range
+                            uint color = (uint)(0x000D7D77 + (t << 16) + (t << 8) + t); // Lighter at bottom
+                            for (int x = 0; x < fbW; x++) {
+                                fb[y * fbW + x] = color;
+                            }
                         }
                     }
                 } catch {
@@ -648,6 +691,7 @@ unsafe class Program {
                     rightClicked = false;
                 }
 
+                // Draw desktop icons and taskbar
                 try {
                     int iconSize = 48;
                     Desktop.Update(
@@ -660,8 +704,6 @@ unsafe class Program {
                 } catch {
                     // Ignore desktop update errors
                 }
-
-                //Desktop.Draw();
 
                 // Draw windows in layers to control z-order:
                 // 1. Regular windows (except Task Manager)

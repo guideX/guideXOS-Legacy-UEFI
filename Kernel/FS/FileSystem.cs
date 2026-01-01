@@ -65,46 +65,19 @@ namespace guideXOS.FS {
                 return null;
             }
             
-            BootConsole.WriteLine("[File.ReadAllBytes] Instance type check");
+            BootConsole.WriteLine("[File.ReadAllBytes] FS Type: " + Instance.FileSystemType.ToString());
             
-            // WORKAROUND: Try direct cast to RdskFS first (avoids virtual dispatch issues)
-            RdskFS rdskfs = Instance as RdskFS;
-            if (rdskfs != null) {
-                BootConsole.WriteLine("[File.ReadAllBytes] Direct cast to RdskFS succeeded");
-                try {
-                    byte[] result = rdskfs.ReadAllBytes(name);
-                    BootConsole.WriteLine("[File.ReadAllBytes] RdskFS.ReadAllBytes returned");
-                    return result;
-                } catch {
-                    BootConsole.WriteLine("[File.ReadAllBytes] RdskFS.ReadAllBytes threw exception!");
-                    return null;
-                }
-            }
-            
-            // Fallback: try TarFS
-            TarFS tarfs = Instance as TarFS;
-            if (tarfs != null) {
-                BootConsole.WriteLine("[File.ReadAllBytes] Direct cast to TarFS succeeded");
-                try {
-                    byte[] result = tarfs.ReadAllBytes(name);
-                    BootConsole.WriteLine("[File.ReadAllBytes] TarFS.ReadAllBytes returned");
-                    return result;
-                } catch {
-                    BootConsole.WriteLine("[File.ReadAllBytes] TarFS.ReadAllBytes threw exception!");
-                    return null;
-                }
-            }
-            
-            BootConsole.WriteLine("[File.ReadAllBytes] WARNING: Could not cast to known types, trying virtual dispatch");
-            
-            // Last resort: try virtual dispatch
+            // Use type flag instead of 'as' casts (more reliable in bare-metal)
             try {
-                BootConsole.WriteLine("[File.ReadAllBytes] Attempting virtual dispatch...");
                 byte[] result = Instance.ReadAllBytes(name);
-                BootConsole.WriteLine("[File.ReadAllBytes] Virtual method returned successfully");
+                if (result != null) {
+                    BootConsole.WriteLine("[File.ReadAllBytes] Success, size: " + result.Length.ToString());
+                } else {
+                    BootConsole.WriteLine("[File.ReadAllBytes] Returned NULL");
+                }
                 return result;
             } catch {
-                BootConsole.WriteLine("[File.ReadAllBytes] Virtual dispatch FAILED!");
+                BootConsole.WriteLine("[File.ReadAllBytes] Exception in ReadAllBytes!");
                 return null;
             }
         }
@@ -144,9 +117,20 @@ namespace guideXOS.FS {
     /// </summary>
     public abstract class FileSystem {
         /// <summary>
+        /// File system type identifier (workaround for type checking)
+        /// </summary>
+        public int FileSystemType;
+        
+        public const int FS_TYPE_UNKNOWN = 0;
+        public const int FS_TYPE_RDSK = 1;
+        public const int FS_TYPE_TAR = 2;
+        public const int FS_TYPE_FAT = 3;
+        
+        /// <summary>
         /// Constructor
         /// </summary>
         public FileSystem() {
+            FileSystemType = FS_TYPE_UNKNOWN;
             File.Instance = this;
         }
         /// <summary>

@@ -86,6 +86,8 @@
     <Compile Include="$(MSBuildThisFileDirectory)Misc\PageTable.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Misc\Panic.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Misc\PNG.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\PngAssetPreloader.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Misc\PngLoader.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Misc\Process.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Misc\SchedulerExtensions.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Misc\SHA256.cs" />

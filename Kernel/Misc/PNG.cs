@@ -4,6 +4,28 @@ using System.Runtime.InteropServices;
 using guideXOS.Kernel.Drivers;
 
 namespace guideXOS.Misc {
+    // ============================================================================
+    // LEGACY PNG LOADER - UNSAFE FOR UEFI ENVIRONMENT
+    // ============================================================================
+    // WARNING: This class uses native P/Invoke calls (lodepng_decode_memory) which
+    // are NOT available after ExitBootServices in UEFI boot mode.
+    //
+    // UEFI CONSTRAINT: After ExitBootServices(), NO native library calls are allowed.
+    // The UEFI runtime environment does not support dynamic linking or native code
+    // execution beyond what the kernel itself provides.
+    //
+    // SAFE ALTERNATIVE: Use PngLoader (Kernel\Misc\PngLoader.cs) which is a pure
+    // managed implementation that works in both legacy and UEFI boot modes.
+    //
+    // For boot-time PNG loading (before ExitBootServices), use PngAssetPreloader
+    // to decode PNGs while UEFI services are still available, then retrieve the
+    // decoded RGBA data after boot.
+    //
+    // This class is retained for legacy (GRUB/Multiboot) boot compatibility only.
+    // In UEFI mode, this class will fall back to LodePNG (managed) which may have
+    // stability issues. Prefer PngLoader for all new code.
+    // ============================================================================
+    [System.Obsolete("Use PngLoader for UEFI-safe PNG decoding. This class uses native P/Invoke which is unavailable after ExitBootServices.")]
     public unsafe class PNG : Image {
         public enum LodePNGColorType { LCT_GREY = 0, LCT_RGB = 2, LCT_PALETTE = 3, LCT_GREY_ALPHA = 4, LCT_RGBA = 6 }
 
@@ -38,42 +60,109 @@ namespace guideXOS.Misc {
         }
 
         public PNG(byte[] file, LodePNGColorType type = LodePNGColorType.LCT_RGBA, uint bitDepth = 8) {
+            // ============================================================
+            // LEGACY PNG LOADING PATH
+            // ============================================================
+            // UEFI WARNING: This constructor may use unsafe native calls
+            // in legacy boot mode. For UEFI boot, it delegates to LodePNG
+            // (managed), but PngLoader is the preferred safe alternative.
+            //
+            // For new code, use:
+            //   if (PngLoader.Load(data, out Image result)) { ... }
+            // ============================================================
+            
+            // RAW serial output to bypass any BootConsole issues
+            Native.Out8(0x3F8, (byte)'P');
+            Native.Out8(0x3F8, (byte)'N');
+            Native.Out8(0x3F8, (byte)'G');
+            Native.Out8(0x3F8, (byte)'1');
+            Native.Out8(0x3F8, (byte)'\n');
+            
             // Validate input first
             if (file == null || file.Length < 33) {
-                BootConsole.WriteLine("[PNG] Invalid input - fallback");
+                Native.Out8(0x3F8, (byte)'N');
+                Native.Out8(0x3F8, (byte)'U');
+                Native.Out8(0x3F8, (byte)'L');
+                Native.Out8(0x3F8, (byte)'\n');
                 BuildFallback(out RawData, out int fw, out int fh);
                 Width = fw; Height = fh; Bpp = 4;
                 return;
             }
+            
+            Native.Out8(0x3F8, (byte)'P');
+            Native.Out8(0x3F8, (byte)'N');
+            Native.Out8(0x3F8, (byte)'G');
+            Native.Out8(0x3F8, (byte)'2');
+            Native.Out8(0x3F8, (byte)'\n');
             
             // Pre-validate PNG header and get dimensions
             bool canDecode = TryGetIHDRDims(file, out uint ihdrW, out uint ihdrH);
             if (!canDecode) {
-                BootConsole.WriteLine("[PNG] No valid header - fallback");
+                Native.Out8(0x3F8, (byte)'H');
+                Native.Out8(0x3F8, (byte)'D');
+                Native.Out8(0x3F8, (byte)'R');
+                Native.Out8(0x3F8, (byte)'X');
+                Native.Out8(0x3F8, (byte)'\n');
                 BuildFallback(out RawData, out int fw, out int fh);
                 Width = fw; Height = fh; Bpp = 4;
                 return;
             }
             
+            Native.Out8(0x3F8, (byte)'P');
+            Native.Out8(0x3F8, (byte)'N');
+            Native.Out8(0x3F8, (byte)'G');
+            Native.Out8(0x3F8, (byte)'3');
+            Native.Out8(0x3F8, (byte)'\n');
+            
             // UEFI mode: Use managed LodePNG decoder (no native code required)
             if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
-                BootConsole.WriteLine("[PNG] UEFI: Using managed LodePNG decoder");
+                Native.Out8(0x3F8, (byte)'U');
+                Native.Out8(0x3F8, (byte)'E');
+                Native.Out8(0x3F8, (byte)'F');
+                Native.Out8(0x3F8, (byte)'I');
+                Native.Out8(0x3F8, (byte)'\n');
+                
                 try {
+                    Native.Out8(0x3F8, (byte)'L');
+                    Native.Out8(0x3F8, (byte)'P');
+                    Native.Out8(0x3F8, (byte)'N');
+                    Native.Out8(0x3F8, (byte)'G');
+                    Native.Out8(0x3F8, (byte)'\n');
+                    
                     var decoded = new LodePNG(file);
+                    
+                    Native.Out8(0x3F8, (byte)'D');
+                    Native.Out8(0x3F8, (byte)'O');
+                    Native.Out8(0x3F8, (byte)'N');
+                    Native.Out8(0x3F8, (byte)'E');
+                    Native.Out8(0x3F8, (byte)'\n');
+                    
                     if (decoded.RawData != null && decoded.Width > 0 && decoded.Height > 0) {
                         Width = decoded.Width;
                         Height = decoded.Height;
                         Bpp = decoded.Bpp;
                         RawData = decoded.RawData;
-                        // Don't dispose decoded - we're taking ownership of RawData
-                        BootConsole.WriteLine("[PNG] UEFI: Decoded " + Width.ToString() + "x" + Height.ToString());
+                        Native.Out8(0x3F8, (byte)'O');
+                        Native.Out8(0x3F8, (byte)'K');
+                        Native.Out8(0x3F8, (byte)'\n');
                         return;
                     }
+                    Native.Out8(0x3F8, (byte)'B');
+                    Native.Out8(0x3F8, (byte)'A');
+                    Native.Out8(0x3F8, (byte)'D');
+                    Native.Out8(0x3F8, (byte)'\n');
                 } catch {
-                    BootConsole.WriteLine("[PNG] UEFI: LodePNG decode failed");
+                    Native.Out8(0x3F8, (byte)'E');
+                    Native.Out8(0x3F8, (byte)'X');
+                    Native.Out8(0x3F8, (byte)'C');
+                    Native.Out8(0x3F8, (byte)'\n');
                 }
                 
                 // Fallback to placeholder if decode fails
+                Native.Out8(0x3F8, (byte)'F');
+                Native.Out8(0x3F8, (byte)'B');
+                Native.Out8(0x3F8, (byte)'K');
+                Native.Out8(0x3F8, (byte)'\n');
                 BuildFallback(out RawData, out int fw, out int fh);
                 Width = fw; Height = fh; Bpp = 4;
                 return;

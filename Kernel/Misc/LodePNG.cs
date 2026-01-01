@@ -3,13 +3,42 @@ using System;
 using System.Drawing;
 
 namespace guideXOS.Misc {
+    // ============================================================================
+    // LEGACY MANAGED PNG LOADER - SUPERSEDED BY PngLoader
+    // ============================================================================
+    // WARNING: This class is a full-featured but complex PNG decoder that was
+    // ported from the LodePNG C library. While it is pure managed code and does
+    // not require native P/Invoke calls, it has several limitations:
+    //
+    // 1. COMPLEXITY: The decoder is large and may have edge cases that cause
+    //    hangs or incorrect output in the constrained kernel environment.
+    //
+    // 2. MEMORY USAGE: Uses many temporary allocations during decoding which
+    //    can cause fragmentation in the kernel's memory allocator.
+    //
+    // 3. NO PRELOAD SUPPORT: Cannot be used for boot-time asset preloading
+    //    as it doesn't integrate with PngAssetPreloader.
+    //
+    // SAFE ALTERNATIVE: Use PngLoader (Kernel\Misc\PngLoader.cs) which is
+    // specifically designed for the UEFI kernel environment with:
+    //   - Minimal memory allocations
+    //   - No recursion
+    //   - No exceptions
+    //   - Integration with PngAssetPreloader for boot-time loading
+    //
+    // This class is retained for compatibility but should not be used for
+    // new code. It may be removed in a future version.
+    // ============================================================================
     /// <summary>
     /// Pure managed C# port of LodePNG - PNG decoder
     /// Ported from: https://github.com/lvandeve/lodepng
     /// Supports: All standard PNG color types (grayscale, RGB, palette, with/without alpha)
     /// Supports: 1, 2, 4, 8, 16 bit depths
     /// Supports: Adam7 interlacing
+    /// 
+    /// DEPRECATED: Use PngLoader instead for UEFI-safe PNG decoding.
     /// </summary>
+    [System.Obsolete("Use PngLoader for UEFI-safe PNG decoding. LodePNG is retained for legacy compatibility only.")]
     public unsafe class LodePNG : Image {
         
         #region Constants

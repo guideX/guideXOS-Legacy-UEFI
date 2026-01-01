@@ -3,11 +3,37 @@ using System;
 using System.Drawing;
 
 namespace guideXOS.Misc {
+    // ============================================================================
+    // LEGACY MANAGED PNG LOADER - SUPERSEDED BY PngLoader
+    // ============================================================================
+    // WARNING: This class was an early attempt at a managed PNG decoder but has
+    // been superseded by PngLoader which offers:
+    //
+    // 1. BETTER UEFI SUPPORT: Designed specifically for pre/post ExitBootServices
+    //    scenarios with clear boot phase boundaries.
+    //
+    // 2. PRELOAD INTEGRATION: Works with PngAssetPreloader for boot-time asset
+    //    loading before UEFI services are terminated.
+    //
+    // 3. SAFER IMPLEMENTATION: No exceptions, no recursion, bounded iterations,
+    //    and explicit buffer management.
+    //
+    // UEFI CONSTRAINT: After ExitBootServices(), the kernel cannot make any UEFI
+    // calls. PNG assets needed after boot must be decoded BEFORE ExitBootServices
+    // using PngAssetPreloader, then retrieved from kernel-owned memory.
+    //
+    // SAFE ALTERNATIVE: Use PngLoader (Kernel\Misc\PngLoader.cs) for all new code.
+    //
+    // This class is retained for reference but should not be used.
+    // ============================================================================
     /// <summary>
     /// Pure managed PNG decoder - no native code required
     /// Supports: 8-bit RGBA, RGB, Grayscale, Grayscale+Alpha, Palette
     /// Uses custom DEFLATE implementation for zlib decompression
+    /// 
+    /// DEPRECATED: Use PngLoader instead for UEFI-safe PNG decoding.
     /// </summary>
+    [System.Obsolete("Use PngLoader for UEFI-safe PNG decoding. ManagedPNG is retained for legacy compatibility only.")]
     public unsafe class ManagedPNG : Image {
         
         #region PNG Constants
