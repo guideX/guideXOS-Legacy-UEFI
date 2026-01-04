@@ -15,3 +15,4 @@
 /ESP/kernel.elf
 /Tools/grub2/boot/grub/i386-pc/eltorito.img
 /ESP/ramdisk.img
+/guideXOSBootLoader/guideXOS.1fedf2ad

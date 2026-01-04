@@ -28,6 +28,8 @@ Forbidden:
 #include <Library/PrintLib.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Protocol/LoadedImage.h>
+#include <Protocol/SimplePointer.h>
+#include <Protocol/AbsolutePointer.h>
 #include <Guid/Acpi.h>
 #include <Guid/FileInfo.h>
 #include "bootinfo.h"          // legacy, gradually being phased out
@@ -362,6 +364,50 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     if (EFI_ERROR(status)) {
         Print(L"Failed to locate GOP\n");
         return status;
+    }
+
+    // --- Locate Simple Pointer Protocol (Mouse) ---
+    // This protocol provides relative mouse movement data from UEFI-aware pointing devices.
+    // NOTE: This pointer is ONLY valid before ExitBootServices!
+    EFI_SIMPLE_POINTER_PROTOCOL* simplePointer = nullptr;
+    {
+        EFI_GUID simplePointerGuid = EFI_SIMPLE_POINTER_PROTOCOL_GUID;
+        EFI_STATUS spStatus = SystemTable->BootServices->LocateProtocol(
+            &simplePointerGuid,
+            NULL,
+            (void**)&simplePointer
+        );
+        if (EFI_ERROR(spStatus)) {
+            Print(L"Simple Pointer Protocol not found (no UEFI mouse)\n");
+            simplePointer = nullptr;
+        } else {
+            Print(L"Simple Pointer Protocol found at %p\n", (VOID*)simplePointer);
+            // Store in BootInfo for kernel
+            v1BootInfo->SimplePointerProtocol = (uint64_t)(UINTN)simplePointer;
+            v1BootInfo->Flags |= guideXOS::BOOTINFO_FLAG_SIMPLE_POINTER;
+        }
+    }
+
+    // --- Locate Absolute Pointer Protocol (Touchscreen) ---
+    // This protocol provides absolute position data from touchscreens, tablets, etc.
+    // NOTE: This pointer is ONLY valid before ExitBootServices!
+    EFI_ABSOLUTE_POINTER_PROTOCOL* absolutePointer = nullptr;
+    {
+        EFI_GUID absolutePointerGuid = EFI_ABSOLUTE_POINTER_PROTOCOL_GUID;
+        EFI_STATUS apStatus = SystemTable->BootServices->LocateProtocol(
+            &absolutePointerGuid,
+            NULL,
+            (void**)&absolutePointer
+        );
+        if (EFI_ERROR(apStatus)) {
+            Print(L"Absolute Pointer Protocol not found (no touchscreen)\n");
+            absolutePointer = nullptr;
+        } else {
+            Print(L"Absolute Pointer Protocol found at %p\n", (VOID*)absolutePointer);
+            // Store in BootInfo for kernel
+            v1BootInfo->AbsolutePointerProtocol = (uint64_t)(UINTN)absolutePointer;
+            v1BootInfo->Flags |= guideXOS::BOOTINFO_FLAG_ABSOLUTE_POINTER;
+        }
     }
 
     // === DRAW BOOT SPLASH IMMEDIATELY ===
@@ -748,10 +794,20 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     rangeCount++;
     Print(L"Mapping low memory region: 0x100000 size 4MB\n");
     
-    // NOTE: Do NOT identity-map the kernel virtual address range here!
-    // The kernel virtual addresses (0x10XXXXXX) need to map to the PHYSICAL
-    // addresses where the kernel was loaded (0x3DXXXXXX).
-    // This is done separately by MapRange() after BuildIdentityPageTables().
+    // 13. Local APIC MMIO (required for UseAPIC bring-up)
+    // Most x86_64 systems use 0xFEE00000 for the LAPIC.
+    // If this region isn't mapped, the first LAPIC MMIO access will fault.
+    ranges[rangeCount] = 0xFEE00000ULL;
+    sizes[rangeCount] = 0x1000ULL; // 4KB
+    rangeCount++;
+    Print(L"Mapping Local APIC MMIO: 0xFEE00000 size 4KB\n");
+
+    // 14. IOAPIC MMIO (common default 0xFEC00000). Not strictly required for LAPIC timer,
+    // but needed once IOAPIC.Initialize() runs.
+    ranges[rangeCount] = 0xFEC00000ULL;
+    sizes[rangeCount] = 0x1000ULL; // 4KB
+    rangeCount++;
+    Print(L"Mapping IOAPIC MMIO: 0xFEC00000 size 4KB\n");
 
     Print(L"Building identity page tables with %u ranges...\n", (UINT32)rangeCount);
 

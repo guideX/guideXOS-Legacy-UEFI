@@ -75,6 +75,7 @@ public static class IDT {
         public ulong rcx;
         public ulong rdx;
         public ulong rbx;
+        public ulong rbp;   // Added - was missing! Must match assembly PUSH_GPRS order
         public ulong rsi;
         public ulong rdi;
         public ulong r8;
@@ -104,6 +105,9 @@ public static class IDT {
 
     // Throttled IRQ0 debug
     private static uint _irq0DebugCounter;
+
+    // Counter for IRQ0 debug output
+    private static uint _irq0Count;
 
     [RuntimeExport("intr_handler")]
     public static unsafe void intr_handler(int irq, IDTStackGeneric* stack) {
@@ -158,9 +162,39 @@ public static class IDT {
 
         // Timer IRQ0 (PIC -> vector 0x20). Drive scheduler here.
         if (irq == 0x20) {
-            // Switch thread context by rewriting the IRET frame in-place.
+            // Debug: entering timer IRQ handler (no wait loop)
+            _irq0Count++;
+            
+            // Only log first few IRQ0s to avoid flooding serial
+            if (_irq0Count <= 5) {
+                BootConsole.WriteLine("IRQ0");
+            }
+            
+            // Update timer ticks
+            Timer.OnInterrupt();
+            
+            // Debug: after Timer.OnInterrupt
+            if (_irq0Count <= 5) {
+                BootConsole.WriteLine("TOK");
+            }
+            
+            // Context switching is disabled during boot (SchedulingEnabled = false)
+            // This just returns immediately without modifying the stack
             ThreadPool.Schedule(stack);
+            
+            // Debug: after Schedule
+            if (_irq0Count <= 5) {
+                BootConsole.WriteLine("SCH");
+            }
+            
+            // Send EOI to APIC
             Interrupts.EndOfInterrupt((byte)irq);
+            
+            // Debug: after EOI, about to return
+            if (_irq0Count <= 5) {
+                BootConsole.WriteLine("EOI");
+            }
+            
             return;
         }
 

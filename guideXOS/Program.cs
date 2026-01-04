@@ -1,9 +1,19 @@
+/*
+   guideXOS Development Constraints:
+
+   - Presume a C# Kernel, and C# OS
+   - Presume a C++ bootloader
+   - The code must be compatible with UEFI mode.
+   - Please make use of BootConsole.WriteLine, BootConsole.Write, and other helper functions there, do not
+     always use while ((Native.In8(0x3FD) & 0x20) == 0) { } Native.Out8(0x3F8, 'a'); for example when debugging
+ */
 using guideXOS;
 using guideXOS.DefaultApps;
 using guideXOS.DockableWidgets;
 using guideXOS.FS;
 using guideXOS.GUI;
 using guideXOS.Kernel.Drivers;
+using guideXOS.Kernel.Drivers.Input;
 using guideXOS.Misc;
 using guideXOS.OS;
 using guideXOS.Modules;
@@ -66,17 +76,58 @@ unsafe class Program {
             BootConsole.WriteLine("[ANIMATOR] Skipped (UEFI mode)");
         }
 
-        BootConsole.WriteLine("[INPUT] PS/2 INIT");
-        if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-            // Initialize legacy PS/2 input first so VirtualBox (default PS/2 devices) works out-of-the-box.
-            // This provides keyboard IRQ1 (0x21) and mouse IRQ12 (0x2C) handling even without USB HID.
-            try { PS2Keyboard.Initialize(); } catch { }
-            try { PS2Mouse.Initialize(); } catch { }
-            // Initialize VMware absolute pointer backdoor if present (no-op on other hypervisors)
-            try { VMwareTools.Initialize(); } catch { }
-            BootConsole.WriteLine("[INPUT] PS/2 complete (Legacy)");
-        } else {
-            BootConsole.WriteLine("[INPUT] PS/2 skipped (UEFI mode)");
+        // ============================================================================
+        // CAPABILITY-BASED MOUSE DETECTION
+        // ============================================================================
+        // 
+        // Priority order:
+        // 1. UEFI Simple Pointer (UEFI boot, before ExitBootServices)
+        // 2. VMware Backdoor (VMware VMs - absolute positioning)
+        // 3. USB HID Mouse (after USB init)
+        // 4. Legacy PS/2 Mouse (Legacy boot only, explicitly enabled)
+        // 5. Keyboard Emulation (fallback)
+        //
+        // NO unconditional PS/2 initialization - only if explicitly needed
+        // ============================================================================
+        
+        BootConsole.WriteLine("[INPUT] Starting capability-based mouse detection");
+        
+        bool isLegacyBoot = (BootConsole.CurrentMode == guideXOS.BootMode.Legacy);
+        bool enablePS2Fallback = isLegacyBoot; // Only enable PS/2 fallback in Legacy mode
+        
+        // Get boot info for UEFI mode (null for Legacy)
+        // Note: bootInfo is passed through a different path, so we use null here
+        // The MouseInputManager was already initialized in EntryPoint with bootInfo
+        MouseCapabilityDetector.DetectAndInitialize(null, isLegacyBoot, enablePS2Fallback);
+        
+        // Log which mouse path was chosen
+        BootConsole.WriteLine("[INPUT] Primary mouse: " + 
+            MouseCapabilityDetector.GetCapabilityName(MouseCapabilityDetector.PrimaryCapability));
+        
+        // Initialize PS/2 keyboard (both Legacy and UEFI modes)
+        // QEMU emulates PS/2 keyboard at the hardware level, so it should work in UEFI mode too
+        // This enables keyboard-to-mouse emulation (arrow keys + F1/F2) as fallback input
+        BootConsole.WriteLine("[INPUT] Initializing PS/2 keyboard");
+        try {
+            // Initialize keyboard event dispatcher first
+            Keyboard.Initialize();
+            
+            // Initialize PS/2 keyboard hardware interface
+            PS2Keyboard.Initialize();
+            
+            // Enable full keyboard processing (was disabled during early boot)
+            PS2Keyboard.EnableFullProcessing();
+            
+            BootConsole.WriteLine("[INPUT] PS/2 keyboard initialized");
+            
+            // Wire up keyboard-to-mouse emulation for UEFI mode
+            // This allows arrow keys to control the mouse cursor
+            if (!isLegacyBoot) {
+                BootConsole.WriteLine("[INPUT] Keyboard-to-mouse emulation active");
+                BootConsole.WriteLine("[INPUT] Use Arrow keys to move cursor, F1=Left click, F2=Right click");
+            }
+        } catch { 
+            BootConsole.WriteLine("[INPUT] PS/2 keyboard initialization failed");
         }
 
         BootConsole.WriteLine("[USB] INIT");
@@ -86,11 +137,18 @@ unsafe class Program {
                 HID.Initialize();
                 EHCI.Initialize();
                 USB.StartPolling();
-            } catch { /* USB stack is optional; continue boot */ }
+                
+                // After USB init, check if USB HID mouse is available
+                MouseCapabilityDetector.CheckUsbHidMouse();
+            } catch { }
             BootConsole.WriteLine("[USB] Complete (Legacy)");
         } else {
             BootConsole.WriteLine("[USB] Skipped (UEFI mode)");
         }
+        
+        // Log final mouse detection result
+        BootConsole.WriteLine("[INPUT] Mouse detection complete");
+        BootConsole.WriteLine("[INPUT] Mouse enabled: " + MouseCapabilityDetector.MouseEnabled);
 
         //Sized width to 512
         BootConsole.WriteLine("[CURSOR] Creating cursor images");
@@ -101,13 +159,29 @@ unsafe class Program {
             
             // Create simple white arrow cursor
             Cursor = new Image(16, 16);
-            for (int y = 0; y < 16; y++) {
-                for (int x = 0; x < 16; x++) {
-                    // Simple arrow shape: x + y < 16 and x < y + 3
-                    if (x + y < 16 && x < y + 3) {
-                        Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF);
+            if (Cursor != null && Cursor.RawData != null) {
+                // Clear to transparent first
+                for (int i = 0; i < 16 * 16; i++) {
+                    Cursor.RawData[i] = 0; // Transparent
+                }
+                
+                // Draw a larger, more visible white arrow
+                for (int y = 0; y < 16; y++) {
+                    for (int x = 0; x < 16; x++) {
+                        // Larger arrow shape: classic pointer
+                        if (y < 12 && x < 8 && x <= y && x < (12 - y)) {
+                            Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF); // White
+                        }
+                        // Add black outline for visibility
+                        else if (y < 13 && x < 9 && (x == y + 1 || x == (11 - y) || (y == 11 && x <= 7))) {
+                            Cursor.RawData[y * 16 + x] = unchecked((int)0xFF000000); // Black outline
+                        }
                     }
                 }
+                
+                BootConsole.WriteLine("[CURSOR] Fallback cursor drawn successfully");
+            } else {
+                BootConsole.WriteLine("[CURSOR] ERROR: Cursor or RawData is null!");
             }
             
             CursorMoving = Cursor;
@@ -578,10 +652,7 @@ unsafe class Program {
 
                 if (shouldLog) {
                     // RAW serial output for debugging
-                    Native.Out8(0x3F8, (byte)'F');
-                    Native.Out8(0x3F8, (byte)'R');
-                    Native.Out8(0x3F8, (byte)'M');
-                    Native.Out8(0x3F8, (byte)'\n');
+                    BootConsole.WriteLine("FRM");
                 }
 
                 // FIXED: Periodically refresh cached icons to prevent memory buildup (optional)
@@ -601,6 +672,15 @@ unsafe class Program {
                     } catch {
                         // Ignore background rotation errors
                     }
+                }
+
+                // Poll mouse input from all registered providers (UEFI, USB HID, etc.)
+                // Uses unified MouseEventDispatcher for source-agnostic event handling
+                // This updates Control.MousePosition and Control.MouseButtons
+                try {
+                    MouseEventDispatcher.Update();
+                } catch {
+                    // Ignore mouse polling errors
                 }
 
                 // Per-frame input pass for all windows
@@ -740,7 +820,14 @@ unsafe class Program {
                 // FIXED: Use bitwise AND instead of HasFlag() to avoid enum boxing
                 try {
                     var img = (Control.MouseButtons & MouseButtons.Left) == MouseButtons.Left ? CursorMoving : Cursor;
-                    if (img != null) Framebuffer.Graphics.DrawImage(Control.MousePosition.X, Control.MousePosition.Y, img);
+                    if (img != null && img.RawData != null) {
+                        Framebuffer.Graphics.DrawImage(Control.MousePosition.X, Control.MousePosition.Y, img);
+                    } else {
+                        // Debug: log if cursor is null (only once per 600 frames)
+                        if (shouldLog) {
+                            BootConsole.WriteLine("CNULL");
+                        }
+                    }
                 } catch {
                     // Ignore cursor drawing errors
                 }

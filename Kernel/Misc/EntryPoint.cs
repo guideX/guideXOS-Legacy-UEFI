@@ -1,5 +1,6 @@
 using guideXOS.FS;
 using guideXOS.Kernel.Drivers;
+using guideXOS.Kernel.Drivers.Input;
 using Internal.Runtime.CompilerHelpers;
 using System;
 using System.Runtime;
@@ -198,13 +199,26 @@ namespace guideXOS.Misc {
                 BootConsole.WriteLine("[ACPI] RSDP address available");
             }
 
-            if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy)
+            // ACPI is required for APIC discovery in UEFI mode.
+            // Use the bootloader-provided RSDP under UEFI instead of legacy memory scanning.
+            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                if (bootInfo->AcpiRsdp != 0) {
+                    ACPI.InitializeFromRsdp(bootInfo->AcpiRsdp);
+                } else {
+                    BootConsole.WriteLine("[ACPI] WARNING: No RSDP provided by bootloader");
+                }
+            } else {
                 ACPI.Initialize();
+            }
 #if UseAPIC
             BootConsole.WriteLine("[PIC] DISABLED");
             PIC.Disable();
+            BootConsole.WriteLine("[Local APIC] INIT");
             LocalAPIC.Initialize();
+            BootConsole.WriteLine("[Local APIC] INIT DONE");
+            BootConsole.WriteLine("[IO APIC] INIT");
             IOAPIC.Initialize();
+            BootConsole.WriteLine("[IO APIC] INIT DONE");
 #else
             BootConsole.WriteLine("[PIC] ENABLED");
             PIC.Enable();
@@ -217,11 +231,28 @@ namespace guideXOS.Misc {
 
             BootConsole.WriteLine("[SERIAL] INIT");
             Serial.Initialize();
-            if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy)
-                PS2Controller.Initialize();
+            
+            // PS/2 Controller initialization moved to capability-based detection in Program.KMain
+            // This prevents unconditional PS/2 access on UEFI systems without PS/2 hardware
+            if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
+                BootConsole.WriteLine("[PS2] Controller initialization deferred to capability detection");
+            }
             
             BootConsole.WriteLine("[VMWARE] INIT");
             VMwareTools.Initialize();
+
+            // Initialize UEFI mouse input if available (before other subsystems)
+            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                BootConsole.WriteLine("[INPUT] Initializing UEFI mouse input");
+                try {
+                    MouseInputManager.Initialize(bootInfo);
+                    if (MouseInputManager.IsInitialized) {
+                        BootConsole.WriteLine("[INPUT] MouseInputManager initialized");
+                    }
+                } catch {
+                    BootConsole.WriteLine("[INPUT] MouseInputManager initialization failed");
+                }
+            }
 
             if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy)
                  SMBIOS.Initialize();
@@ -233,14 +264,26 @@ namespace guideXOS.Misc {
                 SATA.Initialize();
                 ThreadPool.Initialize();
             }
-            
+
+#if !UseAPIC
             Native.Out8(0x21, 0xFF); // Master PIC: mask all IRQs (IRQ 0-7)
             Native.Out8(0xA1, 0xFF); // Slave PIC: mask all IRQs (IRQ 8-15)
+#endif
 
             BootConsole.WriteLine("[SCHED] ThreadPool.Initialize");
             ThreadPool.Initialize();
+            
+            // Debug: ThreadPool.Initialize returned
+            Native.Out8(0x3F8, (byte)'T');
+            Native.Out8(0x3F8, (byte)'P');
+            Native.Out8(0x3F8, (byte)'R');
+            Native.Out8(0x3F8, (byte)'E');
+            Native.Out8(0x3F8, (byte)'T');
+            Native.Out8(0x3F8, (byte)'\n');
+            
             BootConsole.WriteLine("[SCHED] ThreadPool.Initialize complete");
 
+#if !UseAPIC
             // Enable only timer IRQ (IRQ0 -> vector 0x20 with PIC remap) for scheduling.
             BootConsole.WriteLine("[PIC] Enabling IRQ0 (timer) only");
             // Ensure interrupts are disabled while changing masks
@@ -261,9 +304,6 @@ namespace guideXOS.Misc {
             // Assembly-only marker after STI
             SerialDebugMarker();
 
-            // Optionally unmask IRQ0 for a very brief proof window (currently disabled)
-            // Native.Out8(0x21, (byte)(Native.In8(0x21) & 0xFE));
-
             // Immediately mask IRQ0 again to avoid being trapped in the IRQ0 handler during early boot.
             SerialDebugMarker();
             Native.Out8(0x21, (byte)(Native.In8(0x21) | 0x01));
@@ -272,14 +312,15 @@ namespace guideXOS.Misc {
             SerialDebugMarker();
             Native.Cli();
             SerialDebugMarker();
-
-            // Don't use BootConsole after this point until we have a safe console lock-free implementation.
+#else
+            // APIC mode: Local APIC timer drives vector 0x20. Do not touch PIC.
+            BootConsole.WriteLine("[APIC] STI (Local APIC timer active)");
+            Native.Sti();
+#endif
 
             BootConsole.WriteLine("[BOOT] Post-STI continue");
             BootConsole.WriteLine("[BOOT] About to cleanup splash");
 
-            // Remove the post-STI busy loop that can be preempted heavily by IRQ0 and stall output.
-            // Just proceed with booting and rely on the throttled IRQ0 marker to measure time.
             // Give the system a moment to service IRQ0 and prove the IDT path works
             for (int i = 0; i < 50; i++) {
                 Native.Nop();
@@ -392,18 +433,19 @@ namespace guideXOS.Misc {
             //BootConsole.WriteLine("[CALLING_KERNEL_MAIN]");
             KernelMain();
 
-            // From here on, scheduling needs IRQ0. Do not use BootConsole once IRQs can fire.
-            // Unmask IRQ0 at the PIC and enable interrupts.
+            // From here on, scheduling is driven by vector 0x20.
+#if !UseAPIC
+            // Legacy PIC mode: unmask IRQ0 and enable interrupts.
             SerialDebugMarker();
             Native.Out8(0x21, (byte)(Native.In8(0x21) & 0xFE)); // unmask IRQ0
             SerialDebugMarker();
             Native.Sti();
             SerialDebugMarker();
+#else
+            // APIC mode: Local APIC timer already configured; just ensure interrupts are enabled.
+            Native.Sti();
+#endif
 
-            // If the scheduler waits for timer IRQs, prove they are arriving.
-            // If we never see '.' markers, IRQ0 isn't mapped/unmasked correctly.
-
-            //BootConsole.WriteLine("[SCHED] Pre-StartScheduling");
             ThreadPool.StartScheduling();
 
             // If we ever return here, stop.
@@ -467,7 +509,11 @@ namespace guideXOS.Misc {
             Timer.Initialize();
             Keyboard.Initialize();
             Serial.Initialize();
-            PS2Controller.Initialize();
+            
+            // PS/2 Controller and Mouse initialization moved to capability-based detection
+            // in Program.KMain to allow proper detection and fallback
+            BootConsole.WriteLine("[PS2] Controller initialization deferred to capability detection");
+            
             VMwareTools.Initialize();
             SMBIOS.Initialize();
             PCI.Initialize();

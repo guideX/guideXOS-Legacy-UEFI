@@ -2,11 +2,61 @@ using guideXOS.Misc;
 using System;
 using static System.ConsoleKey;
 namespace guideXOS.Kernel.Drivers {
+    /// <summary>
+    /// PS/2 Keyboard Driver
+    /// 
+    /// ============================================================================
+    /// UEFI COMPATIBILITY AUDIT
+    /// ============================================================================
+    /// 
+    /// CLASSIFICATION SUMMARY:
+    /// -----------------------
+    /// 1. BIOS-ERA ONLY (will NOT work in UEFI):
+    ///    - Direct port I/O to 0x60/0x64 (i8042 controller)
+    ///    - IRQ1 interrupt registration (0x21 vector)
+    ///    - Assumes BIOS has initialized keyboard controller
+    ///    - Relies on legacy PIC for interrupt delivery
+    /// 
+    /// 2. UEFI-INCOMPATIBLE:
+    ///    - Initialize(): Port 0x60/0x64 commands assume i8042 exists
+    ///    - OnInterrupt(): Reads from port 0x60 directly
+    ///    - IRQ1 registration via Interrupts.EnableInterrupt(0x21, ...)
+    ///    
+    ///    WHY: UEFI systems may not have PS/2 keyboard hardware:
+    ///    - Many modern systems are USB-only
+    ///    - UEFI firmware does NOT initialize i8042 in native UEFI mode
+    ///    - UEFI uses EFI_SIMPLE_TEXT_INPUT_PROTOCOL instead
+    ///    - Direct port I/O may hang or access non-existent hardware
+    /// 
+    /// 3. POTENTIALLY REUSABLE LOGIC:
+    ///    - Scancode translation (Set 1 and Set 2)
+    ///    - TranslateSet2ToSet1(): Full translation table
+    ///    - Modifier key tracking (_leftShift, _rightShift, etc.)
+    ///    - ScancodeToKey(): Scancode to ConsoleKey mapping
+    ///    - GetChar(): Character generation with shift/caps handling
+    ///    - Keyboard event dispatch via Keyboard.InvokeOnKeyChanged()
+    /// 
+    /// RECOMMENDED UEFI APPROACH:
+    /// --------------------------
+    /// Option A (Simple): Use USB HID keyboard via HID.cs + EHCI.cs
+    /// Option B (Full): Poll EFI_SIMPLE_TEXT_INPUT_PROTOCOL from bootloader,
+    ///                  pass keystrokes via shared memory buffer
+    /// Option C (Hybrid): Store UEFI input protocol pointer in bootInfo,
+    ///                    poll it from main loop (no interrupts needed)
+    /// 
+    /// The scancode translation and character generation logic can be
+    /// extracted into a separate utility class for reuse.
+    /// 
+    /// ============================================================================
+    /// </summary>
     public static unsafe class PS2Keyboard {
-        private const byte DataPort = 0x60;
-        private const byte CommandPort = 0x64;
+        // UEFI-INCOMPATIBLE: Direct i8042 controller ports
+        // These only work when BIOS has initialized the PS/2 controller
+        private const byte DataPort = 0x60;    // i8042 data port - BIOS-ERA ONLY
+        private const byte CommandPort = 0x64; // i8042 command port - BIOS-ERA ONLY
         
-        // Modifier key states
+        // POTENTIALLY REUSABLE: Modifier key state tracking
+        // This pattern can be used for any keyboard input source
         private static bool _leftShift = false;
         private static bool _rightShift = false;
         private static bool _leftCtrl = false;
@@ -17,9 +67,10 @@ namespace guideXOS.Kernel.Drivers {
         private static bool _numLock = false;
         private static bool _scrollLock = false;
         
-        // Extended scancode flag (0xE0 prefix)
+        // POTENTIALLY REUSABLE: Scancode protocol handling
+        // Extended scancodes (0xE0 prefix) are common across input sources
         private static bool _extended = false;
-        // PS/2 Set 2 handling
+        // PS/2 Set 2 handling - useful for any protocol translation
         private static bool _set2 = false;          // Seen 0xF0 break prefix => device uses Set 2
         private static bool _breakPending = false;   // Last byte was 0xF0 => next code is a release
         
@@ -29,20 +80,38 @@ namespace guideXOS.Kernel.Drivers {
         
         /// <summary>
         /// Initialize PS/2 Keyboard
+        /// 
+        /// UEFI-INCOMPATIBLE: This entire method assumes BIOS-initialized PS/2 hardware.
+        /// 
+        /// Entry Points that depend on this:
+        /// - EntryPoint.Entry() (Legacy Multiboot) -> PS2Controller.Initialize() -> PS2Keyboard.Initialize()
+        /// - EntryPoint.KMain() calls Keyboard.Initialize() in Legacy mode only
+        /// 
+        /// WHY this doesn't work in UEFI:
+        /// 1. Port 0x64 command 0x60 assumes i8042 exists
+        /// 2. UEFI firmware does NOT initialize the PS/2 controller in native mode
+        /// 3. IRQ1 (0x21) registration assumes legacy PIC is active
+        /// 4. Many UEFI systems have no physical PS/2 ports
+        /// 
+        /// For UEFI: Use HID.cs USB keyboard or implement EFI_SIMPLE_TEXT_INPUT polling
         /// </summary>
         public static void Initialize() {
-            // Register IRQ1 (keyboard interrupt)
+            // UEFI-INCOMPATIBLE: Legacy IRQ1 registration via PIC
+            // This only works when PIC is enabled and IRQ1 is unmasked
             Interrupts.EnableInterrupt(0x21, &OnInterrupt);
             
+            // UEFI-INCOMPATIBLE: i8042 controller commands
             // Enable keyboard - use small busy-wait loops instead of Hlt
             // Hlt can cause issues if interrupts fire during initialization
             for (int i = 0; i < 100; i++) { } // Small delay
             
-            Native.Out8(CommandPort, 0x60); // Send command byte
+            // UEFI-INCOMPATIBLE: Direct port I/O to i8042
+            Native.Out8(CommandPort, 0x60); // Send command byte - BIOS-ERA ONLY
             
             for (int i = 0; i < 100; i++) { } // Small delay
             
-            Native.Out8(DataPort, 0x65); // Enable keyboard interrupt
+            // UEFI-INCOMPATIBLE: Direct port I/O to i8042
+            Native.Out8(DataPort, 0x65); // Enable keyboard interrupt - BIOS-ERA ONLY
             
             for (int i = 0; i < 100; i++) { } // Small delay
             
@@ -54,9 +123,20 @@ namespace guideXOS.Kernel.Drivers {
         private static bool _initComplete = false;
         
         /// <summary>
-        /// Keyboard interrupt handler
+        /// Keyboard interrupt handler (IRQ1 / vector 0x21)
+        /// 
+        /// UEFI-INCOMPATIBLE: This handler is registered via legacy PIC IRQ system.
+        /// The port read from 0x60 assumes i8042 is present and responding.
+        /// 
+        /// POTENTIALLY REUSABLE: Everything after the port read:
+        /// - Scancode filtering logic
+        /// - Set 1/Set 2 translation
+        /// - Modifier key tracking
+        /// - Character generation
+        /// - Event dispatch
         /// </summary>
         public static void OnInterrupt() {
+            // UEFI-INCOMPATIBLE: Reads from i8042 data port
             byte scancode = Native.In8(DataPort);
             
             // During early boot, just read and discard scancodes
@@ -159,6 +239,9 @@ namespace guideXOS.Kernel.Drivers {
         
         /// <summary>
         /// Translate PS/2 Set 2 make codes to Set 1 equivalents (partial but covers US layout alphanumerics and symbols)
+        /// 
+        /// POTENTIALLY REUSABLE: This translation table is protocol-agnostic.
+        /// Can be used for any input source that provides Set 2 scancodes.
         /// </summary>
         private static byte TranslateSet2ToSet1(byte code, bool extended) {
             // This is a simplified translation table. A full one is very large.
@@ -287,6 +370,9 @@ namespace guideXOS.Kernel.Drivers {
         
         /// <summary>
         /// Update modifier key states (Set 1 codes)
+        /// 
+        /// POTENTIALLY REUSABLE: This modifier tracking logic can be used
+        /// with any input source that provides Set 1 make/break codes.
         /// </summary>
         private static void UpdateModifiers(byte makeCode, bool released) {
             if (_extended) {
@@ -335,6 +421,10 @@ namespace guideXOS.Kernel.Drivers {
         
         /// <summary>
         /// Convert scancode to ConsoleKey (Set 1 codes)
+        /// 
+        /// POTENTIALLY REUSABLE: This mapping table can be used for any
+        /// input source that provides Set 1 make codes.
+        /// Consider extracting to a shared KeyboardTranslation class.
         /// </summary>
         private static ConsoleKey ScancodeToKey(byte makeCode, bool extended) {
             if (extended) {
@@ -454,6 +544,12 @@ namespace guideXOS.Kernel.Drivers {
         
         /// <summary>
         /// Get the character for a scancode with current modifiers (Set 1 codes)
+        /// 
+        /// POTENTIALLY REUSABLE: This character generation logic handles:
+        /// - Shift and CapsLock for letters
+        /// - Shifted symbols on number row
+        /// - NumLock for keypad
+        /// Can be used for any input source with similar modifier state.
         /// </summary>
         private static char GetChar(byte makeCode, bool extended) {
             bool shift = _leftShift || _rightShift;

@@ -3,8 +3,58 @@ using System;
 using System.Windows.Forms;
 using static System.ConsoleKey;
 namespace guideXOS.Kernel.Drivers {
+    /// <summary>
+    /// USB Human Interface Device (HID) Driver
+    /// 
+    /// ============================================================================
+    /// UEFI COMPATIBILITY AUDIT
+    /// ============================================================================
+    /// 
+    /// CLASSIFICATION SUMMARY:
+    /// -----------------------
+    /// 1. POTENTIALLY UEFI-COMPATIBLE:
+    ///    - GetMouse(): Extracts deltas and buttons from HID report
+    ///    - GetKeyboard(): Extracts scancodes from HID report
+    ///    - GetHIDPacket(): Generic HID report fetching
+    ///    - ConsoleKeys[] translation table
+    ///    
+    ///    These DO NOT use legacy ports (0x60/0x64) or PIC IRQs.
+    ///    They communicate via USB control transfers.
+    /// 
+    /// 2. DEPENDENCIES (must work for HID to work in UEFI):
+    ///    - USB.cs: USB request/response handling
+    ///    - EHCI.cs: USB 2.0 host controller driver
+    ///    - Hub.cs: USB hub enumeration
+    ///    - PCI.cs: Must detect USB controllers
+    ///    
+    ///    UEFI STATUS: Currently skipped in UEFI mode (Program.KMain)
+    ///    but the code itself is NOT inherently UEFI-incompatible.
+    /// 
+    /// 3. ENTRY POINTS:
+    ///    - Program.KMain() -> Hub.Initialize(), HID.Initialize(), EHCI.Initialize()
+    ///    - USB.StartPolling() -> USB.LoopPoll() -> USB.OnInterrupt() -> HID.GetMouse/GetKeyboard
+    ///    
+    ///    Currently gated by: BootConsole.CurrentMode == BootMode.Legacy
+    /// 
+    /// 4. REUSABLE COMPONENTS:
+    ///    - HID report parsing (boot protocol keyboard/mouse)
+    ///    - ConsoleKey mapping table
+    ///    - Mouse delta extraction pattern
+    /// 
+    /// RECOMMENDED UEFI APPROACH:
+    /// --------------------------
+    /// USB HID is the BEST option for UEFI mouse/keyboard:
+    /// 1. Enable USB initialization in UEFI mode (requires EHCI/XHCI to work)
+    /// 2. EHCI.Initialize() must handle UEFI memory mapping
+    /// 3. USB.StartPolling() can run in main thread (no interrupts needed)
+    /// 4. Alternative: Use XHCI for USB 3.0 hosts (more common on modern UEFI)
+    /// 
+    /// ============================================================================
+    /// </summary>
     public static unsafe class HID {
         static USBRequest* _usbRequest;
+        
+        // POTENTIALLY UEFI-COMPATIBLE: USB HID device references
         public static ConsoleKey[] ConsoleKeys;
         public static USBDevice Mouse;
         public static USBDevice Keyboard;
@@ -13,6 +63,12 @@ namespace guideXOS.Kernel.Drivers {
             Keyboard = null;
             _usbRequest = (USBRequest*)Allocator.Allocate((ulong)sizeof(USBRequest));
         }
+        /// <summary>
+        /// Get HID report packet from USB device
+        /// 
+        /// POTENTIALLY UEFI-COMPATIBLE: Uses USB control transfers, not legacy ports.
+        /// Requires USB stack (EHCI/XHCI) to be working.
+        /// </summary>
         public static bool GetHIDPacket(USBDevice device, void* buffer, ushort length) {
             (*_usbRequest).Clean(); 
             _usbRequest->Request = 1; // GET_REPORT
@@ -23,6 +79,12 @@ namespace guideXOS.Kernel.Drivers {
             bool res = USB.SendAndReceive(device, _usbRequest, buffer, device.Parent); 
             return res;
         }
+        /// <summary>
+        /// Get keyboard input from USB HID keyboard
+        /// 
+        /// POTENTIALLY UEFI-COMPATIBLE: USB-based, no legacy ports.
+        /// REUSABLE: HID boot protocol keyboard report parsing.
+        /// </summary>
         public static void GetKeyboard(USBDevice device, out byte ScanCode, out ConsoleKey Key) {
             Key = None; ScanCode = 0; 
             byte* desc = stackalloc byte[8]; // Standard boot keyboard report is 8 bytes
@@ -38,6 +100,15 @@ namespace guideXOS.Kernel.Drivers {
                 } 
             }
         }
+        /// <summary>
+        /// Get mouse input from USB HID mouse
+        /// 
+        /// POTENTIALLY UEFI-COMPATIBLE: USB-based, no legacy ports.
+        /// REUSABLE: HID boot protocol mouse report parsing.
+        /// Returns signed deltas (sbyte) and button state.
+        /// 
+        /// For UEFI: This is the recommended mouse input method.
+        /// </summary>
         public static void GetMouse(USBDevice device, out sbyte AxisX, out sbyte AxisY, out MouseButtons buttons) {
             AxisX = 0; AxisY = 0; buttons = MouseButtons.None; 
             byte* desc = stackalloc byte[4]; // Standard boot mouse report is 3 or 4 bytes
@@ -82,6 +153,7 @@ namespace guideXOS.Kernel.Drivers {
             USB.SendAndReceive(device, _usbRequest, null, device.Parent);
 
             // Build a HID usage -> ConsoleKey table large enough for arrow keys, etc.
+            // POTENTIALLY REUSABLE: This mapping can be used for any HID keyboard
             ConsoleKeys = new ConsoleKey[256];
             for (int i = 0; i < ConsoleKeys.Length; i++) ConsoleKeys[i] = None;
             // Letters: HID 0x04..0x1D => A..Z
@@ -100,5 +172,38 @@ namespace guideXOS.Kernel.Drivers {
             ConsoleKeys[0x51] = Down;  // Down Arrow
             ConsoleKeys[0x52] = Up;    // Up Arrow
         }
+        
+        // ============================================================================
+        // UEFI MIGRATION NOTES
+        // ============================================================================
+        // 
+        // USB HID is the RECOMMENDED input method for UEFI:
+        // 
+        // 1. TO ENABLE USB HID IN UEFI MODE:
+        //    - Remove the "Legacy mode only" guard in Program.KMain()
+        //    - Ensure EHCI.Initialize() works with UEFI memory mapping
+        //    - EHCI needs PCI device detection (already has this)
+        //    - May need to handle case where UEFI already claimed USB controller
+        // 
+        // 2. ALTERNATIVE: XHCI for USB 3.0
+        //    - Modern UEFI systems often have XHCI instead of/alongside EHCI
+        //    - Would need a new XHCI driver
+        //    - XHCI is more complex but supports all USB speeds
+        // 
+        // 3. POLLING APPROACH (NO INTERRUPTS):
+        //    - USB.LoopPoll() already does polling in a thread
+        //    - Can be called from main loop without ThreadPool
+        //    - Example:
+        //      if (HID.Mouse != null) {
+        //          HID.GetMouse(HID.Mouse, out sbyte x, out sbyte y, out var btns);
+        //          // Apply filtering from PS2Mouse.cs
+        //          Control.MousePosition.X = Math.Clamp(Control.MousePosition.X + x, ...);
+        //      }
+        // 
+        // 4. COMBINING WITH PS2Mouse FILTERING:
+        //    - Extract TouchpadSensitivity, NoiseThreshold, etc. from PS2Mouse
+        //    - Apply to USB HID deltas for consistent feel
+        // 
+        // ============================================================================
     }
 }

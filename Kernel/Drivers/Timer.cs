@@ -19,8 +19,30 @@ namespace guideXOS.Kernel.Drivers {
         public static void Initialize() {
             BootConsole.WriteLine("[TIMER] INITIALIZE");
 
-            // Minimal timer init compatible with PIC IRQ0 scheduling.
-            // Program PIT channel 0 for ~1000Hz.
+#if UseAPIC
+            // APIC mode: prefer Local APIC timer over PIT.
+            // Requires ACPI MADT + FADT (for bus clock estimation via ACPI PM timer).
+            try {
+                // Estimate APIC bus clock using ACPI PM timer.
+                // This will be a no-op if PM timer isn't present.
+                uint est = LocalAPICTimer.EstimateBusSpeed();
+                if (est != 0) {
+                    Bus_Clock = est;
+                }
+            } catch {
+                // keep Bus_Clock as-is if estimation fails
+            }
+
+            if (Bus_Clock == 0) {
+                // conservative fallback; prevents divide-by-zero if estimation fails
+                Bus_Clock = 100000000;
+            }
+
+            // Start periodic APIC timer at 1000Hz on vector 0x20.
+            LocalAPICTimer.StartTimer(1000, 0x20);
+            BootConsole.WriteLine("[TIMER] Local APIC timer started (1000Hz)");
+#else
+            // Legacy PIC/PIT mode: Program PIT channel 0 for ~1000Hz.
             // PIT base frequency is 1193182 Hz.
             const uint pitHz = 1193182;
             const uint targetHz = 1000;
@@ -36,7 +58,9 @@ namespace guideXOS.Kernel.Drivers {
             Bus_Clock = 100000000;  // placeholder
 
             BootConsole.WriteLine("[TIMER] PIT programmed (1000Hz)");
+#endif
         }
+
         private static ulong EstimateCPUSpeed() {
             ulong prev = Native.Rdtsc();
             ACPITimer.SleepMicroseconds(100000);
@@ -66,19 +90,8 @@ namespace guideXOS.Kernel.Drivers {
         }
 
         public static void Sleep(ulong millisecond) {
-            // In UEFI mode with masked interrupts, Ticks won't advance
-            // Use a simple busy-wait loop instead
-            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
-                // Simple busy-wait: approximately 1 million iterations per millisecond
-                // This is a rough approximation but ensures we don't hang
-                ulong iterations = millisecond * 100000;
-                for (ulong i = 0; i < iterations; i++) {
-                    Native.Nop();
-                }
-                return;
-            }
-            
-            // Legacy mode: use timer ticks
+            // With APIC timer working, Ticks should advance in both modes
+            // Use interrupt-based sleep
             ulong T = Ticks;
             while (Ticks < (T + millisecond)) Native.Hlt();
         }

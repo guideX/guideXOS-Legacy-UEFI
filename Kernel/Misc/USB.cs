@@ -4,6 +4,9 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace guideXOS.Misc {
+    /// <summary>
+    /// USB Device descriptor and request structures
+    /// </summary>
     public class USBDevice {
         public byte USBVersion;
 
@@ -44,6 +47,53 @@ namespace guideXOS.Misc {
         }
     }
 
+    /// <summary>
+    /// USB Core - Handles USB device communication and polling
+    /// 
+    /// ============================================================================
+    /// UEFI COMPATIBILITY AUDIT
+    /// ============================================================================
+    /// 
+    /// CLASSIFICATION SUMMARY:
+    /// -----------------------
+    /// 1. POTENTIALLY UEFI-COMPATIBLE:
+    ///    - OnInterrupt(): Polls HID devices for input
+    ///    - LoopPoll(): Background thread for continuous polling
+    ///    - SendAndReceive(): Generic USB transfer wrapper
+    ///    - DriveDevice(): Device class dispatch
+    ///    
+    ///    These DO NOT use legacy ports (0x60/0x64) or PIC IRQs.
+    /// 
+    /// 2. DEPENDENCIES (must work for USB to work in UEFI):
+    ///    - EHCI.cs: USB 2.0 host controller (PCI-based)
+    ///    - Hub.cs: USB hub enumeration
+    ///    - HID.cs: Human Interface Device parsing
+    ///    - PCI.cs: Must detect USB controllers
+    ///    - ThreadPool.cs: For background polling thread
+    /// 
+    /// 3. ENTRY POINTS:
+    ///    - Program.KMain() -> USB.StartPolling() (Legacy only currently)
+    ///    - USB.LoopPoll() runs in background thread
+    /// 
+    /// 4. UEFI CONSIDERATIONS:
+    ///    - EHCI registers must be properly mapped (MMIO)
+    ///    - UEFI may have already claimed USB controllers
+    ///    - May need to take over from UEFI USB driver
+    ///    - Alternative: Let UEFI handle USB, poll via runtime service
+    /// 
+    /// RECOMMENDED UEFI APPROACH:
+    /// --------------------------
+    /// Option A (Take over USB): Enable USB stack in UEFI mode
+    ///   - Initialize EHCI/XHCI from scratch
+    ///   - Works if UEFI hasn't locked the controller
+    /// 
+    /// Option B (Use UEFI USB): Store pointers in bootInfo
+    ///   - Bootloader keeps USB driver active
+    ///   - Kernel polls via shared memory
+    ///   - Complex but avoids re-implementing USB
+    /// 
+    /// ============================================================================
+    /// </summary>
     public static unsafe class USB {
         public static byte NumDevice;
         public static byte DeviceAddr;
@@ -56,6 +106,18 @@ namespace guideXOS.Misc {
             }
         }
 
+        /// <summary>
+        /// Poll USB HID devices for input
+        /// 
+        /// POTENTIALLY UEFI-COMPATIBLE: Uses USB transfers, not legacy ports.
+        /// Updates Control.MousePosition/MouseButtons from HID data.
+        /// 
+        /// NOTE: Consider applying PS2Mouse filtering logic here:
+        /// - TouchpadSensitivity
+        /// - NoiseThreshold
+        /// - MaxDeltaPerPacket
+        /// - Button debouncing
+        /// </summary>
         public static void OnInterrupt() {
             if (HID.Keyboard != null) {
                 HID.GetKeyboard(HID.Keyboard, out byte ScanCode, out ConsoleKey Key);
@@ -113,6 +175,16 @@ namespace guideXOS.Misc {
             new Thread(&LoopPoll).Start();
         }
 
+        /// <summary>
+        /// Background polling thread for USB devices
+        /// 
+        /// POTENTIALLY UEFI-COMPATIBLE: Continuously polls USB HID devices.
+        /// For UEFI: Can run from main loop without ThreadPool:
+        ///   while (true) {
+        ///       if (USB.NumDevice != 0) USB.OnInterrupt();
+        ///       // ... render frame ...
+        ///   }
+        /// </summary>
         static void LoopPoll() {
             for (; ; )
             {

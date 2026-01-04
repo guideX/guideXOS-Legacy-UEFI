@@ -42,8 +42,40 @@ namespace guideXOS.Kernel.Drivers {
             Out((byte)(IOREDTBL + index * 2 + 1), (uint)(data >> 32));
         }
 
+        /// <summary>
+        /// Configure an I/O APIC redirection entry for a given legacy IRQ line.
+        /// 
+        /// NOTE: This method expects a legacy IRQ number (0-15), not an IDT vector.
+        /// The IDT vector should be chosen by the caller; GuideXOS commonly uses 0x20 for timer.
+        /// </summary>
+        public static void SetEntryForIrq(uint legacyIrq, byte vector = 0x20) {
+            // Apply ACPI interrupt source overrides
+            uint gsi = ACPI.RemapIRQ(legacyIrq);
+            
+            // Build a basic redirect entry:
+            // bits 0-7: vector
+            // bit 16: mask (0 = enabled)
+            // deliver to BSP (destination in high dword, set later if needed)
+            ulong entry = vector;
+            SetEntry((byte)gsi, entry);
+        }
+
         public static void SetEntry(uint irq) {
-            IOAPIC.SetEntry((byte)ACPI.RemapIRQ(irq - 0x20), irq);
+            // Back-compat shim: existing callers pass an IDT vector like 0x20 (timer), 0x21 (keyboard), 0x2C (mouse)
+            // These correspond to legacy IRQs:
+            // - 0x20 = IRQ0 (timer) 
+            // - 0x21 = IRQ1 (keyboard)
+            // - 0x2C = IRQ12 (mouse) = 0x20 + 12
+            
+            if (irq >= 0x20 && irq < 0x30) {
+                // This is an IDT vector in the remapped range (0x20-0x2F = IRQ0-15)
+                uint legacyIrq = irq - 0x20;
+                SetEntryForIrq(legacyIrq, (byte)irq);
+                return;
+            }
+
+            // Otherwise assume the caller passed a legacy IRQ directly
+            SetEntryForIrq(irq, (byte)(irq + 0x20));
         }
     }
 }

@@ -3,6 +3,34 @@ using System;
 using System.Windows.Forms;
 
 namespace guideXOS {
+    /// <summary>
+    /// Keyboard-to-Mouse Emulation - Arrow keys control mouse pointer
+    /// 
+    /// ============================================================================
+    /// UEFI COMPATIBILITY AUDIT
+    /// ============================================================================
+    /// 
+    /// CLASSIFICATION: UEFI-COMPATIBLE (Pure software)
+    /// 
+    /// This class does NOT access any hardware directly.
+    /// It receives keyboard events and updates mouse position.
+    /// 
+    /// ENTRY POINT:
+    /// - PS2Keyboard.OnInterrupt() -> Kbd2Mouse.OnKeyChanged()
+    /// - USB keyboard via Keyboard.InvokeOnKeyChanged() chain
+    /// 
+    /// REUSABLE FOR ALL INPUT SOURCES:
+    /// - Works with any keyboard input that provides ConsoleKeyInfo
+    /// - Provides accessibility for systems without mouse
+    /// - Useful for UEFI testing when mouse driver not ready
+    /// 
+    /// USES:
+    /// - Arrow keys: Move mouse cursor
+    /// - F1: Left mouse button
+    /// - F2: Right mouse button
+    /// 
+    /// ============================================================================
+    /// </summary>
     internal static class Kbd2Mouse {
         static bool up = false, down = false, left = false, right = false, f1 = false, f2 = false;
 

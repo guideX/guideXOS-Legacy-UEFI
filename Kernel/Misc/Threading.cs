@@ -46,14 +46,20 @@ namespace guideXOS.Misc {
 
         public Thread Start(int run_on_which_cpu) {
             lock (this) {
-                bool hasThatCPU = false;
-                for (int i = 0; i < ACPI.LocalAPIC_CPUIDs.Count; i++) {
-                    if (ACPI.LocalAPIC_CPUIDs[i] == run_on_which_cpu) {
-                        hasThatCPU = true;
-                    }
-                }
-                if (!hasThatCPU) {
+                // UEFI bring-up: ACPI MADT parsing may be unavailable or deferred.
+                // Guard against null/empty CPU list and fall back to BSP.
+                if (ACPI.LocalAPIC_CPUIDs == null || ACPI.LocalAPIC_CPUIDs.Count == 0) {
                     run_on_which_cpu = 0;
+                } else {
+                    bool hasThatCPU = false;
+                    for (int i = 0; i < ACPI.LocalAPIC_CPUIDs.Count; i++) {
+                        if (ACPI.LocalAPIC_CPUIDs[i] == run_on_which_cpu) {
+                            hasThatCPU = true;
+                        }
+                    }
+                    if (!hasThatCPU) {
+                        run_on_which_cpu = 0;
+                    }
                 }
 
                 this.RunOnWhichCPU = run_on_which_cpu;
@@ -72,6 +78,13 @@ namespace guideXOS.Misc {
         public static bool Initialized = false;
         public static bool Locked = false;
         public static long Locker = 0;
+        
+        /// <summary>
+        /// When true, timer interrupts will perform context switching.
+        /// When false, timer interrupts just update Timer.Ticks and return.
+        /// This allows boot to complete without being interrupted by scheduling.
+        /// </summary>
+        public static bool SchedulingEnabled = false;
 
         private static int Index {
             get {
@@ -84,21 +97,71 @@ namespace guideXOS.Misc {
 
         public static void Initialize() {
             Native.Cli();
+
+            // Debug: entering ThreadPool.Initialize (no wait loop - just blast it out)
+            BootConsole.WriteLine("TP1");
+            
             //Bootstrap CPU
             if (SMP.ThisCPU == 0) {
+                // Debug: bootstrap CPU path
+                BootConsole.WriteLine("TP2");
+                
+                // In UEFI mode, ACPI might not be fully initialized
+                // Use a default size of 1 for single-CPU operation
                 byte size = 0;
-                for (int i = 0; i < ACPI.LocalAPIC_CPUIDs.Count; i++)
-                    if (ACPI.LocalAPIC_CPUIDs[i] > size) size = ACPI.LocalAPIC_CPUIDs[i];
+
+                // Debug: checking ACPI CPUIDs
+                BootConsole.WriteLine("TP2A");
+                // Guard against null LocalAPIC_CPUIDs (UEFI mode)
+                bool hasCpuIds = ACPI.LocalAPIC_CPUIDs != null;
+
+                // Debug: null check done
+                BootConsole.WriteLine("TP2B");
+
+                if (hasCpuIds) {
+                    int count = ACPI.LocalAPIC_CPUIDs.Count;
+
+                    // Debug: got count - simplified without wait
+                    BootConsole.Write("TP2C=");
+                    Native.Out8(0x3F8, (byte)('0' + (count % 10)));
+                    Native.Out8(0x3F8, (byte)'\n');
+                    
+                    // Skip the loop entirely for now - just use size = 0 (single CPU)
+                    // The loop accessing List[i] may be causing issues
+                    // if (count > 0) {
+                    //     for (int i = 0; i < count; i++) {
+                    //         byte cpuId = ACPI.LocalAPIC_CPUIDs[i];
+                    //         if (cpuId > size) size = cpuId;
+                    //     }
+                    // }
+                    
+                    // For UEFI single-core boot, just use size = 0
+                    // This creates a single-element Indexs array which is fine
+                }
+                
+                // Debug: ACPI CPU IDs processed
+                BootConsole.WriteLine("TP2D");
+
+                // Debug: allocating Indexs array
+                BootConsole.WriteLine("TP3");
+                
                 Indexs = new int[size + 1];
 
                 Locked = false;
                 Initialized = false;
                 Threads = new();
+
+                // Debug: creating idle thread
+                BootConsole.WriteLine("TP4");
+                
                 //At least a thread for each CPU to make Thread Pool work
                 var t = new Thread(&IdleThread);
                 t.IsIdleThread = true;
                 t.Start(0);
                 Initialized = true;
+
+                // Debug: idle thread created
+                BootConsole.WriteLine("TP5");
             }
             //Application CPU
             else {
@@ -107,7 +170,22 @@ namespace guideXOS.Misc {
                 t.IsIdleThread = true;
                 t.Start((int)SMP.ThisCPU);
             }
+
+            // Debug: done - enable interrupts now (scheduling still disabled)
+            BootConsole.WriteLine("TP6");
+
+            // Debug: about to call Sti
+            BootConsole.WriteLine("STI-");
+
+            // Enable interrupts so timer can fire (but scheduling is disabled via SchedulingEnabled flag)
             Native.Sti();
+
+            // Debug: Sti returned! This should print after interrupts are enabled
+            BootConsole.WriteLine("OK");
+
+            // Debug: function is about to return
+            BootConsole.WriteLine("RET");
+
             // NOTE: Schedule_Next() moved to explicit StartScheduling() call
             // to prevent thread switching during boot initialization
             // Schedule_Next(); //start scheduling
@@ -122,6 +200,11 @@ namespace guideXOS.Misc {
                 BootConsole.WriteLine("[SCHED] ThreadPool not initialized - scheduling disabled");
                 for (; ; ) Native.Hlt();
             }
+
+            BootConsole.WriteLine("[SCHED] Enabling preemptive scheduling");
+            
+            // Enable context switching in the timer interrupt handler
+            SchedulingEnabled = true;
 
             BootConsole.WriteLine("[SCHED] Using IRQ0-driven scheduling");
             BootConsole.WriteLine("[SCHED] Waiting for timer interrupts");
@@ -186,6 +269,10 @@ namespace guideXOS.Misc {
 
         public static void Schedule(IDT.IDTStackGeneric* stack) {
             if (!Initialized) return;
+            
+            // If scheduling is not enabled, just return without context switching
+            // This allows boot to complete with interrupts enabled but no preemption
+            if (!SchedulingEnabled) return;
 
             //Lock all processors except locker CPU
             if (Locked && Locker != SMP.ThisCPU) {

@@ -503,11 +503,13 @@ Load_IDT:
 extern intr_handler
 
 %macro PUSH_GPRS 0
-    ; Order must match IDT.RegistersStack: rax rcx rdx rbx rsi rdi r8 r9 r10 r11 r12 r13 r14 r15
+    ; Order must match IDT.RegistersStack: rax rcx rdx rbx rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15
+    ; CRITICAL: Must save RBP! The interrupted code might be using it as frame pointer.
     push rax
     push rcx
     push rdx
     push rbx
+    push rbp        ; Added RBP - was missing!
     push rsi
     push rdi
     push r8
@@ -531,6 +533,7 @@ extern intr_handler
     pop r8
     pop rdi
     pop rsi
+    pop rbp         ; Added RBP - was missing!
     pop rbx
     pop rdx
     pop rcx
@@ -539,25 +542,115 @@ extern intr_handler
 
 ; A common ISR entry used by all vectors.
 ; On entry: AL contains vector number.
+;
+; IDTStackGeneric layout in C#:
+;   struct IDTStackGeneric {
+;       RegistersStack rs;        // 15 * 8 = 120 bytes (rax, rcx, rdx, rbx, rbp, rsi, rdi, r8-r15)
+;       ulong errorCode;          // 8 bytes
+;       InterruptReturnStack irs; // 5 * 8 = 40 bytes (rip, cs, rflags, rsp, ss) - pushed by CPU
+;   }
+;
+; So we need to push GPRs FIRST (so they're at lowest address), then error code.
+; The CPU already pushed the interrupt return frame.
+;
 global isr_common
 isr_common:
-    ; Save vector in rbx temporarily
-    movzx ebx, al
+    ; Save vector number temporarily
+    push rax                ; Save vector (in AL, but push full RAX) [will be at highest addr]
+    
+    ; Push dummy error code FIRST (it comes AFTER RegistersStack in memory, but we push it first
+    ; because stack grows down, so it ends up at higher address)
+    ; Actually no - we need the MEMORY LAYOUT to match the struct.
+    ; Stack grows DOWN, so what we push LAST is at the LOWEST address.
+    ; C# struct has RegistersStack at offset 0 (lowest), errorCode at offset 120, irs at offset 128.
+    ; So we need: [RSP+0]=GPRs, [RSP+120]=errorCode, [RSP+128]=irs
+    ; 
+    ; Currently on stack after 'push rax' for vector:
+    ;   [RSP+0] = saved vector RAX
+    ;   [RSP+8] = RIP (from CPU)
+    ;   [RSP+16] = CS
+    ;   [RSP+24] = RFLAGS  
+    ;   [RSP+32] = RSP
+    ;   [RSP+40] = SS
+    ;
+    ; We need to build the struct so that when we pass RSP to managed code:
+    ;   [RSP+0..119] = RegistersStack (15 regs)
+    ;   [RSP+120] = errorCode
+    ;   [RSP+128..167] = InterruptReturnStack (5 qwords from CPU)
+    ;
+    ; The CPU's frame is already at the right place if we push:
+    ;   - errorCode (8 bytes)
+    ;   - GPRs (120 bytes, pushed in reverse order so first reg is at lowest addr)
+    ;
+    ; Wait, let's think again. After CPU interrupt:
+    ;   [RSP] = RIP, [RSP+8] = CS, ... [RSP+32] = SS (the irs)
+    ;
+    ; We need final layout:
+    ;   [RSP+0] = rax (first of RegistersStack)
+    ;   ...
+    ;   [RSP+112] = r15 (last of RegistersStack)  
+    ;   [RSP+120] = errorCode
+    ;   [RSP+128] = RIP (irs.rip)
+    ;   [RSP+136] = CS
+    ;   [RSP+144] = RFLAGS
+    ;   [RSP+152] = RSP
+    ;   [RSP+160] = SS
+    ;
+    ; So we push errorCode first (goes above irs), then GPRs (go above errorCode)
+    ; Total pushed by us: 1 (errorCode) + 15 (GPRs) = 16 qwords = 128 bytes
+    ; Plus 1 for saved vector = 136 bytes from CPU's frame
+    
+    ; Pop the vector we just saved (we'll save it differently)
+    pop rax                 ; Get vector back into AL
+    
+    ; Now push in correct order to build IDTStackGeneric:
+    ; First push dummy error code (will be at offset 120 relative to final RSP)
+    push qword 0            ; errorCode placeholder
+    
+    ; Now push all GPRs in the order that puts rax at lowest address
+    ; RegistersStack order: rax, rcx, rdx, rbx, rbp, rsi, rdi, r8-r15
+    ; Push in REVERSE order so rax ends up at lowest address
+    push r15
+    push r14
+    push r13
+    push r12
+    push r11
+    push r10
+    push r9
+    push r8
+    push rdi
+    push rsi
+    push rbp
+    push rbx
+    push rdx
+    push rcx
+    ; Save RAX last but we need to preserve the vector first
+    movzx ecx, al           ; Save vector in ECX (it was in AL)
+    push rax                ; Now push RAX (may have been modified, but we have vector in ECX)
 
-    ; Save registers
-    PUSH_GPRS
+    ; Now RSP points to IDTStackGeneric:
+    ;   [RSP+0] = rax ... [RSP+112] = r15 (RegistersStack, 120 bytes but r15 is last so +112)
+    ; Wait, let me recalculate:
+    ;   [RSP+0] = rax, [RSP+8] = rcx, ..., [RSP+112] = r15
+    ;   [RSP+120] = errorCode
+    ;   [RSP+128] = RIP (irs.rip from CPU)
+    ;   ...
+    ; That's 15 regs * 8 = 120 bytes for GPRs, + 8 for error code = 128 bytes we pushed
+    ; Plus CPU pushed 40 bytes (5 qwords for irs)
+    
+    ; RCX already has vector number (first param)
+    mov rdx, rsp            ; RDX = pointer to IDTStackGeneric (second param)
 
-    ; Provide a dummy error code slot so managed code can always read stack->errorCode
-    push qword 0
-
-    ; RCX = irq/vector, RDX = pointer to IDTStackGeneric
-    mov ecx, ebx
-    mov rdx, rsp
+    ; Align stack and add shadow space for MS x64 ABI
+    sub rsp, 32             ; Shadow space
 
     call intr_handler
 
-    ; --- DEBUG: emit '.' to COM1 to prove we returned from intr_handler ---
-    ; Wait for THR empty
+    add rsp, 32             ; Remove shadow space
+
+    ; --- DEBUG: emit '.' to COM1 ---
+    push rax
+    push rdx
     mov dx, 0x3FD
 .isr_wait:
     in al, dx
@@ -566,13 +659,30 @@ isr_common:
     mov dx, 0x3F8
     mov al, '.'
     out dx, al
-    ; --- END DEBUG ---
+    pop rdx
+    pop rax
 
-    ; Pop error code slot
+    ; Restore GPRs (in reverse order of how we pushed them)
+    pop rax
+    pop rcx
+    pop rdx
+    pop rbx
+    pop rbp
+    pop rsi
+    pop rdi
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+    
+    ; Pop error code
     add rsp, 8
 
-    ; Restore regs and return
-    POP_GPRS
+    ; Now RSP points to interrupt return frame: RIP, CS, RFLAGS, RSP, SS
     iretq
 
 ; Generate stubs for 0..255 that load AL=vector and jump to common.
@@ -676,45 +786,71 @@ vmware_send:
     xor eax, eax
     ret
 
-; insw/outsw stubs (PIO string ops)
-; Windows x64 ABI: RCX=port, RDX=data ptr, R8=count
-; Insw(ushort port, ushort* data, ulong count)
-; Outsw(ushort port, ushort* data, ulong count)
-
-global Insw
-Insw:
-    ; RCX = port, RDX = data pointer, R8 = count
-    push rdi            ; Save RDI (callee-saved in Windows ABI)
-    mov rdi, rdx        ; RDI = data buffer (destination for insw)
-    mov rdx, rcx        ; DX = port (insw uses DX for port)
-    mov rcx, r8         ; RCX = count for rep
-    rep insw
-    pop rdi             ; Restore RDI
+global Rdmsr
+Rdmsr:
+    ; RCX = MSR index
+    mov ecx, ecx
+    rdmsr
+    shl rdx, 32
+    or rax, rdx
     ret
 
-global Outsw
-Outsw:
-    ; RCX = port, RDX = data pointer, R8 = count
-    push rsi            ; Save RSI (callee-saved in Windows ABI)
-    mov rsi, rdx        ; RSI = data buffer (source for outsw)
-    mov rdx, rcx        ; DX = port (outsw uses DX for port)
-    mov rcx, r8         ; RCX = count for rep
-    rep outsw
-    pop rsi             ; Restore RSI
+global Wrmsr
+Wrmsr:
+    ; RCX = MSR index, RDX = value
+    mov r8, rdx          ; value
+    mov ecx, ecx         ; index
+    mov eax, r8d         ; low 32
+    shr r8, 32
+    mov edx, r8d         ; high 32
+    wrmsr
     ret
 
-; misc helpers
+; ----------------------------------------------------------
+; Missing symbols required by managed code / runtime glue
+; ----------------------------------------------------------
 
+; Unsigned long conversion helper (stub)
+; Signature expected by managed: mystrtoul(...)
+; Provide a trivial implementation that returns 0.
 global mystrtoul
 mystrtoul:
     xor eax, eax
     ret
 
+; LodePNG decode entrypoint (stub)
+; int lodepng_decode_memory(...)
+; Return nonzero to indicate failure (keeps callers from using output buffers).
 global lodepng_decode_memory
 lodepng_decode_memory:
     mov eax, 1
     ret
 
+; PIO string ops for disk drivers
+; Windows x64 ABI: RCX=port, RDX=data ptr, R8=count
+
+global Insw
+Insw:
+    push rdi
+    mov rdi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    rep insw
+    pop rdi
+    ret
+
+global Outsw
+Outsw:
+    push rsi
+    mov rsi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    rep outsw
+    pop rsi
+    ret
+
+; Scheduler entrypoint used by ThreadPool (stub)
+; Real implementation should switch to next thread context.
 global Schedule_Next
 Schedule_Next:
     ret

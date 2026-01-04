@@ -48,36 +48,77 @@ namespace guideXOS.Kernel.Drivers {
         private const int ICR_ALL_INCLUDING_SELF = 0x00080000;
         private const int ICR_ALL_EXCLUDING_SELF = 0x000c0000;
         private const int ICR_DESTINATION_SHIFT = 24;
+        private const uint IA32_APIC_BASE_MSR = 0x1B;
+        private const ulong IA32_APIC_BASE_MASK = 0xFFFFF000UL;
+
+        private static ulong ApicBase {
+            get {
+                // Prefer ACPI MADT address when present. This avoids rdmsr (#GP) issues
+                // in bring-up environments where MSR access may not be permitted yet.
+                if (ACPI.MADT != null && ACPI.MADT->LocalAPICAddress != 0)
+                    return ACPI.MADT->LocalAPICAddress;
+
+                // Fallback: IA32_APIC_BASE MSR
+                ulong msr = Native.Rdmsr(IA32_APIC_BASE_MSR);
+                ulong baseAddr = msr & IA32_APIC_BASE_MASK;
+                return baseAddr;
+            }
+        }
+
+        private static void SerialHex64(ulong v) {
+            for (int shift = 60; shift >= 0; shift -= 4) {
+                int nibble = (int)((v >> shift) & 0xF);
+                byte c = (byte)(nibble < 10 ? ('0' + nibble) : ('A' + (nibble - 10)));
+                while ((Native.In8(0x3FD) & 0x20) == 0) { }
+                Native.Out8(0x3F8, c);
+            }
+        }
+
         /// <summary>
         /// Read Registers
         /// </summary>
-        /// <param name="reg"></param>
-        /// <returns></returns>
         public static uint ReadRegister(uint reg) {
-            return MMIO.In32((uint*)(ACPI.MADT->LocalAPICAddress + reg));
+            ulong baseAddr = ApicBase;
+            if (baseAddr == 0) return 0;
+            return MMIO.In32((uint*)(baseAddr + reg));
         }
+
         /// <summary>
         /// Write Registers
         /// </summary>
-        /// <param name="reg"></param>
-        /// <param name="data"></param>
         public static void WriteRegister(uint reg, uint data) {
-            MMIO.Out32((uint*)(ACPI.MADT->LocalAPICAddress + reg), data);
+            ulong baseAddr = ApicBase;
+            if (baseAddr == 0) return;
+            MMIO.Out32((uint*)(baseAddr + reg), data);
         }
+
         /// <summary>
         /// End Of Interrupt
         /// </summary>
         public static void EndOfInterrupt() {
             WriteRegister((uint)LAPIC_EOI, 0);
         }
+
         /// <summary>
         /// Initialize
         /// </summary>
         public static void Initialize() {
+            ulong baseAddr = ApicBase;
+
+            // Serial log APIC base early (BootConsole may be fragile around interrupt init)
+            BootConsole.Write("APIC@");
+            SerialHex64(baseAddr);
+            BootConsole.NewLine();
+
+            if (baseAddr == 0) {
+                BootConsole.WriteLine("[Local APIC] ERROR: APIC base not found");
+                return;
+            }
+
             // Configure Spurious Interrupt Vector Register
-            WriteRegister((uint)LAPIC_SVR, 0x1FF);
-            //if (SMP.ThisCPU != 0)
-            BootConsole.WriteLine("[Local APIC] Local APIC failed to initialize");
+            // Bit 8 enables the APIC. Low 8 bits = spurious vector.
+            WriteRegister((uint)LAPIC_SVR, 0x100 | 0xFF);
+            BootConsole.WriteLine("[Local APIC] Initialized");
         }
         /// <summary>
         /// GetID

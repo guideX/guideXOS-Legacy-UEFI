@@ -63,6 +63,11 @@ namespace guideXOS.Kernel.Drivers {
         /// </summary>
         public static MCFGHeader* MCFG;
 
+        /// <summary>
+        /// List of detected Local APIC IDs (from MADT). Used by SMP + ThreadPool.
+        /// </summary>
+        public static List<byte> LocalAPIC_CPUIDs;
+
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         private struct ACPI_RSDP {
             public fixed sbyte Signature[8];
@@ -233,13 +238,57 @@ namespace guideXOS.Kernel.Drivers {
             return null;
         }
 
-        public static void Shutdown() {
-            Native.Out16((ushort)FADT->PM1aControlBlock, (ushort)(SLP_TYPa | SLP_EN));
-            Native.Out16((ushort)FADT->PM1bControlBlock, (ushort)(SLP_TYPb | SLP_EN));
-            Native.Hlt();
+        private static unsafe bool IsValidRsdp(ACPI_RSDP* rsdp) {
+            if (rsdp == null) return false;
+            // Signature "RSD PTR "
+            if (*(ulong*)rsdp != 0x2052545020445352) return false;
+            return true;
         }
 
-        public static List<byte> LocalAPIC_CPUIDs;
+        /// <summary>
+        /// Initialize ACPI using an explicit RSDP physical address (UEFI-friendly).
+        /// 
+        /// UEFI bootloaders can locate the RSDP via EFI configuration tables and
+        /// pass it to the kernel in BootInfo. Scanning 0xE0000-0xFFFFF is a BIOS-era
+        /// technique and is not reliable under UEFI.
+        /// </summary>
+        public static void InitializeFromRsdp(ulong rsdpPhys) {
+            FADT = null;
+            MADT = null;
+            IO_APIC = null;
+            HPET = null;
+            MCFG = null;
+
+            ACPI.LocalAPIC_CPUIDs = new List<byte>();
+
+            ACPI_RSDP* rsdp = (ACPI_RSDP*)rsdpPhys;
+            if (!IsValidRsdp(rsdp)) {
+                BootConsole.WriteLine("[ACPI] Invalid RSDP passed from bootloader");
+                _deviceLocated = false;
+                _deviceName = "[ACPI] Not Present";
+                return;
+            }
+
+            ACPI_HEADER* rsdt = (ACPI_HEADER*)rsdp->RsdtAddress;
+            if (rsdt == null || *(uint*)rsdt != 0x54445352) { // 'RSDT'
+                BootConsole.WriteLine("[ACPI] RSDT not present/invalid");
+                _deviceLocated = false;
+                _deviceName = "[ACPI] Not Present";
+                return;
+            }
+
+            uint* p = (uint*)(rsdt + 1);
+            uint* end = (uint*)((byte*)rsdt + rsdt->Length);
+
+            while (p < end) {
+                uint address = *p++;
+                ParseDT((ACPI_HEADER*)address);
+            }
+
+            _deviceLocated = true;
+            _deviceName = "[ACPI] ACPI";
+            BootConsole.WriteLine("[ACPI] ACPI Initialized (RSDP provided)");
+        }
 
         public static void Initialize() {
             FADT = null;
@@ -248,10 +297,15 @@ namespace guideXOS.Kernel.Drivers {
             HPET = null;
             MCFG = null;
 
-            LocalAPIC_CPUIDs = new List<byte>();
+            ACPI.LocalAPIC_CPUIDs = new List<byte>();
             ACPI_RSDP* rsdp = GetRSDP();
-            //MMIO.Map(rsdp->RsdtAddress, ushort.MaxValue);
-            ACPI_HEADER* hdr = (ACPI_HEADER*)rsdp->RsdtAddress;
+            if (!IsValidRsdp(rsdp)) {
+                BootConsole.WriteLine("[ACPI] RSDP not found in legacy scan range");
+                _deviceLocated = false;
+                _deviceName = "[ACPI] Not Present";
+                return;
+            }
+
             ACPI_HEADER* rsdt = (ACPI_HEADER*)rsdp->RsdtAddress;
 
             if (rsdt != null && *(uint*)rsdt == 0x54445352) //RSDT
@@ -314,7 +368,7 @@ namespace guideXOS.Kernel.Drivers {
                     if (type == APIC_TYPE.LocalAPIC) {
                         APIC_LOCAL_APIC* pic = (APIC_LOCAL_APIC*)p;
                         if ((pic->Flags & 1) ^ ((pic->Flags >> 1) & 1)) {
-                            LocalAPIC_CPUIDs.Add(pic->ApicId);
+                            ACPI.LocalAPIC_CPUIDs.Add(pic->ApicId);
                         }
                     } else if (type == APIC_TYPE.IOAPIC) {
                         APIC_IO_APIC* ioapic = (APIC_IO_APIC*)p;
@@ -355,6 +409,12 @@ namespace guideXOS.Kernel.Drivers {
             }
 
             return irq;
+        }
+
+        public static void Shutdown() {
+            Native.Out16((ushort)FADT->PM1aControlBlock, (ushort)(SLP_TYPa | SLP_EN));
+            Native.Out16((ushort)FADT->PM1bControlBlock, (ushort)(SLP_TYPb | SLP_EN));
+            Native.Hlt();
         }
     }
 #pragma warning restore

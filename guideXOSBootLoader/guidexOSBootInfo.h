@@ -21,31 +21,75 @@ namespace guideXOS
         B8G8R8A8,   // 32‑bit, little‑endian, BGRA
     };
 
+    // ============================================================================
+    // BootInfo Flags bit definitions
+    // ============================================================================
+    // Bit 0: Memory map valid
+    // Bit 1: Framebuffer valid
+    // Bit 2: Ramdisk valid
+    // Bit 3: Simple Pointer Protocol valid (mouse)
+    // Bit 4: Absolute Pointer Protocol valid (touchscreen)
+    // Bit 5: Text Input Ex Protocol valid (keyboard)
+    // ============================================================================
+    static const uint32_t BOOTINFO_FLAG_MEMMAP           = (1u << 0);
+    static const uint32_t BOOTINFO_FLAG_FRAMEBUFFER      = (1u << 1);
+    static const uint32_t BOOTINFO_FLAG_RAMDISK          = (1u << 2);
+    static const uint32_t BOOTINFO_FLAG_SIMPLE_POINTER   = (1u << 3);
+    static const uint32_t BOOTINFO_FLAG_ABSOLUTE_POINTER = (1u << 4);
+    static const uint32_t BOOTINFO_FLAG_TEXT_INPUT_EX    = (1u << 5);
+
     struct BootInfo
     {
-        uint32_t Magic;
-        uint16_t Version;
-        uint16_t Size;
-        uint32_t Flags;
-        uint32_t HeaderChecksum;
+        // Header (32 bytes)
+        uint32_t Magic;              // 'GXBI' (0x49425847)
+        uint16_t Version;            // Version 1
+        uint16_t Size;               // sizeof(BootInfo)
+        uint32_t Flags;              // Bit flags for valid fields
+        uint32_t HeaderChecksum;     // 32-bit checksum
         uint32_t Reserved0;
-        BootMode BootMode;
+        BootMode BootMode;           // UEFI boot mode
         uint32_t Reserved1;
-        uint64_t MemoryMap;
-        uint64_t MemoryMapEntryCount;
-        uint64_t MemoryMapDescriptorSize;
-        uint64_t FramebufferBase;
-        uint64_t FramebufferSize;
-        uint32_t FramebufferWidth;
-        uint32_t FramebufferHeight;
-        uint32_t FramebufferPitch;
-        FramebufferFormat FramebufferFormat;
+
+        // Memory Map (24 bytes)
+        uint64_t MemoryMap;                // Pointer to EFI_MEMORY_DESCRIPTOR array
+        uint64_t MemoryMapEntryCount;      // Number of entries
+        uint64_t MemoryMapDescriptorSize;  // Size of each descriptor
+
+        // Framebuffer (40 bytes)
+        uint64_t FramebufferBase;          // Physical address
+        uint64_t FramebufferSize;          // Size in bytes
+        uint32_t FramebufferWidth;         // Width in pixels
+        uint32_t FramebufferHeight;        // Height in pixels
+        uint32_t FramebufferPitch;         // Bytes per scanline
+        FramebufferFormat FramebufferFormat; // Pixel format
         uint32_t Reserved2;
-        uint64_t AcpiRsdp;
-        uint64_t CommandLine;
-        uint64_t RamdiskBase;
-        uint64_t RamdiskSize;
-        uint64_t Reserved[6];
+
+        // ACPI (8 bytes)
+        uint64_t AcpiRsdp;                 // ACPI RSDP pointer
+
+        // Command Line (8 bytes)
+        uint64_t CommandLine;              // Kernel command line (optional)
+
+        // Ramdisk (16 bytes)
+        uint64_t RamdiskBase;              // Ramdisk physical address
+        uint64_t RamdiskSize;              // Ramdisk size in bytes
+
+        // ============================================================================
+        // Input Protocols (24 bytes) - UEFI mouse/keyboard support
+        // ============================================================================
+        // These pointers are obtained by the bootloader using LocateProtocol()
+        // and passed to the kernel. They are ONLY valid BEFORE ExitBootServices.
+        // After ExitBootServices, the kernel must switch to USB HID or native drivers.
+        // 
+        // IMPORTANT: The kernel must NOT dereference these pointers after
+        // ExitBootServices is called - doing so will cause undefined behavior.
+        // ============================================================================
+        uint64_t SimplePointerProtocol;    // EFI_SIMPLE_POINTER_PROTOCOL* (mouse)
+        uint64_t AbsolutePointerProtocol;  // EFI_ABSOLUTE_POINTER_PROTOCOL* (touchscreen)
+        uint64_t SimpleTextInputEx;        // EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL* (keyboard)
+
+        // Reserved for future use (24 bytes) - reduced from 48 to accommodate input protocols
+        uint64_t Reserved[3];
     };
 }
 
@@ -106,14 +150,14 @@ namespace guideXOS
 
         // 3. Optional flags and pointer sanity checks
         // Framebuffer info valid?
-        if (bi->Flags & (1u << 1)) {
+        if (bi->Flags & BOOTINFO_FLAG_FRAMEBUFFER) {
             if (bi->FramebufferBase == 0u || bi->FramebufferSize == 0u) {
                 guidexos_early_panic(bi);
             }
         }
 
         // Memory map valid?
-        if (bi->Flags & (1u << 0)) {
+        if (bi->Flags & BOOTINFO_FLAG_MEMMAP) {
             if (bi->MemoryMap == 0u ||
                 bi->MemoryMapEntryCount == 0u ||
                 bi->MemoryMapDescriptorSize == 0u) {
