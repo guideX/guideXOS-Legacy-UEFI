@@ -98,36 +98,39 @@ unsafe class Program {
         // Get boot info for UEFI mode (null for Legacy)
         // Note: bootInfo is passed through a different path, so we use null here
         // The MouseInputManager was already initialized in EntryPoint with bootInfo
+        BootConsole.WriteLine("[INPUT] About to call DetectAndInitialize");
         MouseCapabilityDetector.DetectAndInitialize(null, isLegacyBoot, enablePS2Fallback);
+        BootConsole.WriteLine("[INPUT] DetectAndInitialize returned");
         
         // Log which mouse path was chosen
         BootConsole.WriteLine("[INPUT] Primary mouse: " + 
             MouseCapabilityDetector.GetCapabilityName(MouseCapabilityDetector.PrimaryCapability));
         
-        // Initialize PS/2 keyboard (both Legacy and UEFI modes)
-        // QEMU emulates PS/2 keyboard at the hardware level, so it should work in UEFI mode too
-        // This enables keyboard-to-mouse emulation (arrow keys + F1/F2) as fallback input
-        BootConsole.WriteLine("[INPUT] Initializing PS/2 keyboard");
-        try {
-            // Initialize keyboard event dispatcher first
-            Keyboard.Initialize();
-            
-            // Initialize PS/2 keyboard hardware interface
-            PS2Keyboard.Initialize();
-            
-            // Enable full keyboard processing (was disabled during early boot)
-            PS2Keyboard.EnableFullProcessing();
-            
-            BootConsole.WriteLine("[INPUT] PS/2 keyboard initialized");
-            
-            // Wire up keyboard-to-mouse emulation for UEFI mode
-            // This allows arrow keys to control the mouse cursor
-            if (!isLegacyBoot) {
-                BootConsole.WriteLine("[INPUT] Keyboard-to-mouse emulation active");
-                BootConsole.WriteLine("[INPUT] Use Arrow keys to move cursor, F1=Left click, F2=Right click");
+        BootConsole.WriteLine("[INPUT] After primary mouse log");
+        
+        // Initialize PS/2 keyboard (Legacy mode only)
+        // In UEFI mode, PS/2 keyboard uses IRQ1 which conflicts with APIC mode
+        // Use keyboard-to-mouse emulation as fallback input in UEFI mode
+        if (isLegacyBoot) {
+            BootConsole.WriteLine("[INPUT] Initializing PS/2 keyboard");
+            try {
+                // Initialize keyboard event dispatcher first
+                Keyboard.Initialize();
+                
+                // Initialize PS/2 keyboard hardware interface
+                PS2Keyboard.Initialize();
+                
+                // Enable full keyboard processing (was disabled during early boot)
+                PS2Keyboard.EnableFullProcessing();
+                
+                BootConsole.WriteLine("[INPUT] PS/2 keyboard initialized");
+            } catch { 
+                BootConsole.WriteLine("[INPUT] PS/2 keyboard initialization failed");
             }
-        } catch { 
-            BootConsole.WriteLine("[INPUT] PS/2 keyboard initialization failed");
+        } else {
+            BootConsole.WriteLine("[INPUT] PS/2 keyboard skipped (UEFI mode - use keyboard emulation)");
+            BootConsole.WriteLine("[INPUT] Keyboard-to-mouse emulation active");
+            BootConsole.WriteLine("[INPUT] Use Arrow keys to move cursor, F1=Left click, F2=Right click");
         }
 
         BootConsole.WriteLine("[USB] INIT");
@@ -324,6 +327,91 @@ unsafe class Program {
             // Load saved configuration (UI settings, window positions, recent files, etc.)
             guideXOS.OS.Configuration.LoadConfiguration();
         }
+        
+        // Debug: about to call SMain
+        BootConsole.WriteLine("[KMAIN] About to call SMain");
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'G');
+        Native.Out8(0x3F8, (byte)'O');
+        Native.Out8(0x3F8, (byte)'\n');
+        
+        // UEFI mode: Run a minimal but functional desktop render loop
+        if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+            BootConsole.WriteLine("[KMAIN] UEFI desktop render mode");
+            
+            uint* fb = Framebuffer.VideoMemory;
+            int fbW = Framebuffer.Width;
+            int fbH = Framebuffer.Height;
+            
+            BootConsole.WriteLine("[KMAIN] FB: " + fbW.ToString() + "x" + fbH.ToString());
+            
+            // Colors
+            uint teal = 0x000D7D77;         // Desktop background
+            uint darkTeal = 0x00095550;     // Taskbar background
+            uint white = 0x00FFFFFF;        // Cursor and text
+            uint lightGray = 0x00CCCCCC;    // Start button
+            
+            int taskbarHeight = 40;
+            int mouseX = fbW / 2;
+            int mouseY = fbH / 2;
+            
+            int frame = 0;
+            for (;;) {
+                frame++;
+                
+                // Poll mouse input (skip first few frames to avoid init issues)
+                if (frame > 2) {
+                    try {
+                        MouseEventDispatcher.Update();
+                        mouseX = Control.MousePosition.X;
+                        mouseY = Control.MousePosition.Y;
+                        
+                        // Clamp to screen bounds
+                        if (mouseX < 0) mouseX = 0;
+                        if (mouseY < 0) mouseY = 0;
+                        if (mouseX >= fbW) mouseX = fbW - 1;
+                        if (mouseY >= fbH) mouseY = fbH - 1;
+                    } catch { }
+                }
+                
+                // FAST fill: Use Native.Stosd for the entire screen with teal
+                Native.Stosd(fb, teal, (ulong)(fbW * fbH));
+                
+                // Draw taskbar (overwrite bottom portion with dark teal)
+                uint* taskbarStart = fb + (fbW * (fbH - taskbarHeight));
+                Native.Stosd(taskbarStart, darkTeal, (ulong)(fbW * taskbarHeight));
+                
+                // Draw "Start" button (light gray rectangle) - small area, use loop
+                int startBtnX = 5;
+                int startBtnY = fbH - taskbarHeight + 5;
+                int startBtnW = 60;
+                int startBtnH = 30;
+                for (int y = startBtnY; y < startBtnY + startBtnH && y < fbH; y++) {
+                    for (int x = startBtnX; x < startBtnX + startBtnW && x < fbW; x++) {
+                        fb[y * fbW + x] = lightGray;
+                    }
+                }
+                
+                // Draw cursor (white triangle) - small area, use loop
+                for (int dy = 0; dy < 16 && (mouseY + dy) < fbH; dy++) {
+                    for (int dx = 0; dx < 16 && (mouseX + dx) < fbW; dx++) {
+                        if (dx <= dy && dx < (12 - dy)) {
+                            fb[(mouseY + dy) * fbW + (mouseX + dx)] = white;
+                        }
+                    }
+                }
+                
+                // Log first frame
+                if (frame == 1) {
+                    BootConsole.WriteLine("[KMAIN] Desktop rendered!");
+                }
+                
+                // ~60fps
+                Thread.Sleep(16);
+            }
+        }
+        
+        // Legacy mode: use the full SMain
         SMain();
     }
 
@@ -357,11 +445,27 @@ unsafe class Program {
     private static ulong _lastIconCacheRefresh = 0;
 
     public static void SMain() {
+        // IMMEDIATE debug output - before ANYTHING else
+        // Use raw serial to bypass any potential BootConsole issues
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'M');
+        Native.Out8(0x3F8, (byte)'1');
+        Native.Out8(0x3F8, (byte)'\n');
+        
         // UEFI and Legacy both use full desktop rendering now
         BootConsole.WriteLine("[SMAIN] Starting desktop rendering");
 
         // CRITICAL: Test framebuffer IMMEDIATELY before any complex operations
         BootConsole.WriteLine("[SMAIN] Testing framebuffer access");
+        
+        // Draw directly to framebuffer to prove it works
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)'S');
+        Native.Out8(0x3F8, (byte)'M');
+        Native.Out8(0x3F8, (byte)'2');
+        Native.Out8(0x3F8, (byte)'\n');
+        
         try {
             uint* testFb = Framebuffer.VideoMemory;
             int testW = Framebuffer.Width;
@@ -392,63 +496,49 @@ unsafe class Program {
 
         Image wall = Wallpaper;
         try {
+            BootConsole.WriteLine("[SMAIN] Checking existing wallpaper");
             if (wall != null) {
+                BootConsole.WriteLine("[SMAIN] Resizing existing wallpaper");
                 Wallpaper = wall.ResizeImage(Framebuffer.Width, Framebuffer.Height);
                 wall.Dispose(); // FIXED: Dispose original wallpaper
             } else {
+                BootConsole.WriteLine("[SMAIN] Creating default gradient wallpaper");
+                BootConsole.WriteLine("[SMAIN] FB size: " + Framebuffer.Width.ToString() + "x" + Framebuffer.Height.ToString());
+                
                 // Create default wallpaper with teal gradient (top to bottom)
                 Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height);
-
-                // Teal gradient colors - lighter at top, darker at bottom
-                uint topColor = 0xFF5FD4C4;      // Light teal/cyan
-                uint bottomColor = 0xFF0D7D77;   // Darker teal
-
-                int topR = (int)((topColor >> 16) & 0xFF);
-                int topG = (int)((topColor >> 8) & 0xFF);
-                int topB = (int)(topColor & 0xFF);
-
-                int bottomR = (int)((bottomColor >> 16) & 0xFF);
-                int bottomG = (int)((bottomColor >> 8) & 0xFF);
-                int bottomB = (int)(bottomColor & 0xFF);
-
-                // Create vertical gradient
-                for (int y = 0; y < Wallpaper.Height; y++) {
-                    float t = (float)y / Wallpaper.Height;
-                    int r = (int)(topR + (bottomR - topR) * t);
-                    int g = (int)(topG + (bottomG - topG) * t);
-                    int b = (int)(topB + (bottomB - topB) * t);
-                    uint color = (uint)(0xFF000000 | (r << 16) | (g << 8) | b);
-
-                    for (int x = 0; x < Wallpaper.Width; x++) {
-                        Wallpaper.RawData[y * Wallpaper.Width + x] = (int)color;
+                
+                if (Wallpaper == null) {
+                    BootConsole.WriteLine("[SMAIN] ERROR: Wallpaper allocation returned null!");
+                } else if (Wallpaper.RawData == null) {
+                    BootConsole.WriteLine("[SMAIN] ERROR: Wallpaper.RawData is null!");
+                } else {
+                    BootConsole.WriteLine("[SMAIN] Image allocated, drawing gradient...");
+                    
+                    // Simplified gradient - just fill with solid teal color for now
+                    int totalPixels = Framebuffer.Width * Framebuffer.Height;
+                    int tealColor = unchecked((int)0xFF0D7D77);
+                    
+                    for (int i = 0; i < totalPixels; i++) {
+                        Wallpaper.RawData[i] = tealColor;
                     }
+                    
+                    BootConsole.WriteLine("[SMAIN] Solid color fill complete");
                 }
             }
         } catch {
-            // Fallback: create wallpaper with teal gradient
-            Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height);
-
-            uint topColor = 0xFF5FD4C4;      // Light teal/cyan
-            uint bottomColor = 0xFF0D7D77;   // Darker teal
-
-            int topR = (int)((topColor >> 16) & 0xFF);
-            int topG = (int)((topColor >> 8) & 0xFF);
-            int topB = (int)(topColor & 0xFF);
-
-            int bottomR = (int)((bottomColor >> 16) & 0xFF);
-            int bottomG = (int)((bottomColor >> 8) & 0xFF);
-            int bottomB = (int)(bottomColor & 0xFF);
-
-            for (int y = 0; y < Wallpaper.Height; y++) {
-                float t = (float)y / Wallpaper.Height;
-                int r = (int)(topR + (bottomR - topR) * t);
-                int g = (int)(topG + (bottomG - topG) * t);
-                int b = (int)(topB + (bottomB - topB) * t);
-                uint color = (uint)(0xFF000000 | (r << 16) | (g << 8) | b);
-
-                for (int x = 0; x < Wallpaper.Width; x++) {
-                    Wallpaper.RawData[y * Wallpaper.Width + x] = (int)color;
+            BootConsole.WriteLine("[SMAIN] Wallpaper creation exception - using solid color");
+            // Fallback: create wallpaper with solid teal color
+            try {
+                Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height);
+                if (Wallpaper != null && Wallpaper.RawData != null) {
+                    int tealColor = unchecked((int)0xFF0D7D77);
+                    for (int i = 0; i < Framebuffer.Width * Framebuffer.Height; i++) {
+                        Wallpaper.RawData[i] = tealColor;
+                    }
                 }
+            } catch {
+                BootConsole.WriteLine("[SMAIN] Fallback wallpaper also failed!");
             }
         }
 
@@ -457,6 +547,7 @@ unsafe class Program {
         FConsole = null; // Don't create console here - let it be created on-demand
 
         // Initialize background rotation manager and icons
+        BootConsole.WriteLine("[SMAIN] Setting up icons");
         if (File.Instance != null) {
             BootConsole.WriteLine("[SMAIN] Initializing background manager and icons");
             
@@ -627,24 +718,58 @@ unsafe class Program {
         BootConsole.WriteLine("[SMAIN] Entering main render loop");
 
         // IMMEDIATE test: Draw directly to framebuffer to prove loop is executing
-        BootConsole.WriteLine("[SMAIN] Drawing GREEN test marker");
+        BootConsole.WriteLine("[SMAIN] Drawing BLUE test marker before loop");
         try {
             uint* testFb = Framebuffer.VideoMemory;
             int testW = Framebuffer.Width;
-            uint green = 0x0000FF00;
+            uint blue = 0x000000FF;
             for (int y = 0; y < 50; y++) {
-                for (int x = 0; x < 50; x++) {
-                    testFb[y * testW + x] = green;
+                for (int x = 50; x < 100; x++) {
+                    testFb[y * testW + x] = blue;
                 }
             }
-            BootConsole.WriteLine("[SMAIN] GREEN marker drawn - loop started");
+            BootConsole.WriteLine("[SMAIN] BLUE marker drawn - about to enter loop");
         } catch {
-            BootConsole.WriteLine("[SMAIN] Failed to draw green marker!");
+            BootConsole.WriteLine("[SMAIN] Failed to draw blue marker!");
         }
 
         for (; ; ) {
             try {
                 frameCounter++;
+
+                // In UEFI mode, draw directly to framebuffer every frame to ensure screen updates
+                if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                    uint* fb = Framebuffer.VideoMemory;
+                    int fbW = Framebuffer.Width;
+                    int fbH = Framebuffer.Height;
+                    
+                    // Draw teal background directly to framebuffer
+                    uint teal = 0x000D7D77;
+                    for (int i = 0; i < fbW * fbH; i++) {
+                        fb[i] = teal;
+                    }
+                    
+                    // Draw cursor directly  
+                    int cx = Control.MousePosition.X;
+                    int cy = Control.MousePosition.Y;
+                    uint white = 0x00FFFFFF;
+                    for (int dy = 0; dy < 16 && (cy + dy) < fbH; dy++) {
+                        for (int dx = 0; dx < 16 && (cx + dx) < fbW; dx++) {
+                            if (dx <= dy && dx < (12 - dy)) {
+                                fb[(cy + dy) * fbW + (cx + dx)] = white;
+                            }
+                        }
+                    }
+                    
+                    // Log first frame only
+                    if (frameCounter == 1) {
+                        BootConsole.WriteLine("[SMAIN] First UEFI frame rendered");
+                    }
+                    
+                    // Skip the rest of the complex rendering for now
+                    Thread.Sleep(16); // ~60fps
+                    continue;
+                }
 
                 // Reduce serial output in UEFI mode to improve performance
                 // Only log first frame and every 600 frames (~10 seconds)

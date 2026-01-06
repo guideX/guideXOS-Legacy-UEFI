@@ -63,6 +63,9 @@ static unsafe class Native {
     public static extern void Load_GDT(ref GDT.GDTDescriptor gdtr);
 
     [DllImport("*")]
+    public static extern void Reload_Segments();
+
+    [DllImport("*")]
     public static extern void Load_IDT(ref IDT.IDTDescriptor idtr);
 
     [DllImport("*")]

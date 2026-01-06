@@ -476,6 +476,27 @@ Load_GDT:
     lgdt [rcx]
     ret
 
+; Reload segment registers after GDT change
+; This is REQUIRED after loading a new GDT to actually use the new selectors
+; Windows x64 ABI: no parameters
+; Uses CS=0x08 (kernel code), DS/ES/SS=0x10 (kernel data)
+global Reload_Segments
+Reload_Segments:
+    ; Reload data segment registers immediately
+    mov ax, 0x10            ; Kernel data selector
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
+    mov fs, ax
+    mov gs, ax
+    
+    ; Reload CS via far return
+    ; Push new CS and return address, then do retfq
+    pop rax                 ; Get return address
+    push qword 0x08         ; Push new CS (kernel code selector)
+    push rax                ; Push return address
+    retfq                   ; Far return - loads CS from stack
+
 global Load_IDT
 Load_IDT:
     lidt [rcx]
@@ -648,20 +669,6 @@ isr_common:
 
     add rsp, 32             ; Remove shadow space
 
-    ; --- DEBUG: emit '.' to COM1 ---
-    push rax
-    push rdx
-    mov dx, 0x3FD
-.isr_wait:
-    in al, dx
-    test al, 0x20
-    jz .isr_wait
-    mov dx, 0x3F8
-    mov al, '.'
-    out dx, al
-    pop rdx
-    pop rax
-
     ; Restore GPRs (in reverse order of how we pushed them)
     pop rax
     pop rcx
@@ -683,66 +690,6 @@ isr_common:
     add rsp, 8
 
     ; Now RSP points to interrupt return frame: RIP, CS, RFLAGS, RSP, SS
-    
-    ; DEBUG: Print return RIP
-    push rax
-    push rdx
-    push rcx
-    
-    mov dx, 0x3FD
-.w1: in al, dx
-    test al, 0x20
-    jz .w1
-    mov dx, 0x3F8
-    mov al, 'I'
-    out dx, al
-    
-    mov dx, 0x3FD
-.w2: in al, dx
-    test al, 0x20
-    jz .w2
-    mov dx, 0x3F8
-    mov al, '='
-    out dx, al
-    
-    ; RIP is at [rsp + 24] (we pushed 3 regs = 24 bytes)
-    mov rcx, [rsp + 24]
-    
-    ; Print 16 hex digits (full 64-bit address)
-    mov r8d, 16
-.print_loop:
-    rol rcx, 4
-    mov al, cl
-    and al, 0x0F
-    add al, '0'
-    cmp al, '9'
-    jbe .digit_ok
-    add al, 7
-.digit_ok:
-    push rax
-    mov dx, 0x3FD
-.w3: in al, dx
-    test al, 0x20
-    jz .w3
-    pop rax
-    mov dx, 0x3F8
-    out dx, al
-    dec r8d
-    jnz .print_loop
-    
-    ; Print newline
-    mov dx, 0x3FD
-.w4: in al, dx
-    test al, 0x20
-    jz .w4
-    mov dx, 0x3F8
-    mov al, 0x0A
-    out dx, al
-    
-    pop rcx
-    pop rdx
-    pop rax
-    
     iretq
 
 ; Generate stubs for 0..255 that load AL=vector and jump to common.

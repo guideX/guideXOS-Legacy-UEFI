@@ -125,6 +125,11 @@ static class GDT {
         }
 
         Native.Load_GDT(ref gdtr);
+        
+        // CRITICAL: Reload segment registers with the new GDT selectors
+        // Without this, the CPU continues using UEFI's segment selectors (CS=0x38, SS=0x30)
+        // which causes interrupt returns to fail
+        Native.Reload_Segments();
 
         // Note: Loading TR requires a native implementation (ltr). Until provided in NativeLib,
         // keep TSS defined but do not call ltr to avoid link errors.
