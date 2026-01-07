@@ -103,8 +103,7 @@ unsafe class Program {
         BootConsole.WriteLine("[INPUT] DetectAndInitialize returned");
         
         // Log which mouse path was chosen
-        BootConsole.WriteLine("[INPUT] Primary mouse: " + 
-            MouseCapabilityDetector.GetCapabilityName(MouseCapabilityDetector.PrimaryCapability));
+        BootConsole.WriteLine("[INPUT] Primary mouse: " + MouseCapabilityDetector.GetCapabilityName(MouseCapabilityDetector.PrimaryCapability));
         
         BootConsole.WriteLine("[INPUT] After primary mouse log");
         
@@ -448,10 +447,7 @@ unsafe class Program {
         // IMMEDIATE debug output - before ANYTHING else
         // Use raw serial to bypass any potential BootConsole issues
         while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'S');
-        Native.Out8(0x3F8, (byte)'M');
-        Native.Out8(0x3F8, (byte)'1');
-        Native.Out8(0x3F8, (byte)'\n');
+        BootConsole.WriteLine("SM1");
         
         // UEFI and Legacy both use full desktop rendering now
         BootConsole.WriteLine("[SMAIN] Starting desktop rendering");
@@ -461,11 +457,8 @@ unsafe class Program {
         
         // Draw directly to framebuffer to prove it works
         while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'S');
-        Native.Out8(0x3F8, (byte)'M');
-        Native.Out8(0x3F8, (byte)'2');
-        Native.Out8(0x3F8, (byte)'\n');
-        
+        BootConsole.WriteLine("SM2");
+
         try {
             uint* testFb = Framebuffer.VideoMemory;
             int testW = Framebuffer.Width;
