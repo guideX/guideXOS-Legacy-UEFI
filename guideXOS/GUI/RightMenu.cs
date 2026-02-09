@@ -76,10 +76,10 @@ namespace guideXOS.GUI {
                 
                 // Item 1: Performance Widget toggle
                 if (Hit(currentItem, mx, my, itemH)) {
-                    if (Program.perfWidget != null) {
-                        Program.perfWidget.Visible = !Program.perfWidget.Visible;
-                        if (Program.perfWidget.Visible) {
-                            WindowManager.MoveToEnd(Program.perfWidget);
+                    if (Program.PerfWidget != null) {
+                        Program.PerfWidget.Visible = !Program.PerfWidget.Visible;
+                        if (Program.PerfWidget.Visible) {
+                            WindowManager.MoveToEnd(Program.PerfWidget);
                         }
                     }
                     this.Visible = false;
@@ -176,7 +176,7 @@ namespace guideXOS.GUI {
             
             // Performance Widget toggle
             string perfLabel = "Performance Widget";
-            if (Program.perfWidget != null && Program.perfWidget.Visible) {
+            if (Program.PerfWidget != null && Program.PerfWidget.Visible) {
                 perfLabel += " ?";
             }
             WindowManager.font.DrawString(X + 8, y + (itemH / 2) - (WindowManager.font.FontSize / 2), perfLabel); 

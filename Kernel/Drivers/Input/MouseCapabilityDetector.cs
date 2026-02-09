@@ -88,34 +88,47 @@ namespace guideXOS.Kernel.Drivers.Input {
         /// <param name="bootInfo">UEFI boot info (null for Legacy boot)</param>
         /// <param name="isLegacyBoot">True if Legacy/Multiboot boot</param>
         /// <param name="enablePS2Fallback">True to allow PS/2 fallback in Legacy mode</param>
-        public static void DetectAndInitialize(UefiBootInfo* bootInfo, bool isLegacyBoot, bool enablePS2Fallback = true) {
+        public static void DetectAndInitialize(UefiBootInfo* bootInfo, bool uefi, bool enablePS2Fallback = true) {
             DebugLog("[MouseCapability] Starting capability detection");
-            DebugLog("[MouseCapability] Boot mode: " + (isLegacyBoot ? "Legacy" : "UEFI"));
+            DebugLog("[MouseCapability] Boot mode: " + (!uefi ? "Legacy" : "UEFI"));
             
             _detectionComplete = false;
             _mouseEnabled = false;
             _primaryCapability = MouseCapability.None;
             
-            // Initialize the MouseInputManager first
-            if (bootInfo != null) {
-                MouseInputManager.Initialize(bootInfo);
-            } else {
-                MouseInputManager.Initialize();
+            // DON'T re-initialize MouseInputManager - it was already initialized in EntryPoint
+            // with the correct bootInfo. Re-initializing would lose the UEFI pointer provider.
+            // if (bootInfo != null) {
+            //     MouseInputManager.Initialize(bootInfo);
+            // } else {
+            //     MouseInputManager.Initialize();
+            // }
+            
+            // Check if MouseInputManager already has a UEFI provider registered
+            if (uefi && MouseInputManager.IsInitialized) {
+                DebugLog("[MouseCapability] MouseInputManager already initialized");
+                // The UEFI pointer was registered during EntryPoint initialization
+                _hasUefiSimplePointer = true;
+                _primaryCapability = MouseCapability.UefiSimplePointer;
+                _mouseEnabled = true;
+                DebugLog("[MouseCapability] Using pre-registered UEFI pointer");
             }
 
-            // STEP 1: Check for UEFI pointer protocols (UEFI boot only)
-            if (!isLegacyBoot && bootInfo != null) {
+            // STEP 1: Check for UEFI pointer protocols (UEFI boot only) - skip if already set
+            if (uefi && bootInfo != null && _primaryCapability == MouseCapability.None) {
                 DetectUefiPointer(bootInfo);
             }
 
             // STEP 2: Check for VMware backdoor (works in both modes, but check early)
-            DetectVMwareBackdoor();
+            if (_primaryCapability == MouseCapability.None) {
+                DetectVMwareBackdoor();
+            }
 
             // STEP 3: Check for USB HID mouse (both modes, after USB init)
             // Note: USB HID detection happens separately after USB stack init
 
             // STEP 4: Legacy PS/2 fallback (Legacy boot only, if enabled)
-            if (isLegacyBoot && enablePS2Fallback && _primaryCapability == MouseCapability.None) {
+            if (!uefi && enablePS2Fallback && _primaryCapability == MouseCapability.None) {
                 DetectAndInitializePS2();
             }
 
