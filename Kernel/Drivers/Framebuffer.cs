@@ -14,9 +14,10 @@ namespace guideXOS.Kernel.Drivers {
         /// </summary>
         public static ushort Height;
         /// <summary>
-        /// Video Memory
+        /// Video Memory - stored as a plain static field (NOT an auto-property)
+        /// so the raw pointer value survives UEFI managed reference corruption.
         /// </summary>
-        public static uint* VideoMemory { get; private set; }
+        public static uint* VideoMemory;
         /// <summary>
         /// First Buffer
         /// </summary>
@@ -54,6 +55,25 @@ namespace guideXOS.Kernel.Drivers {
                     Console.Clear();
                 }
             }
+        }
+
+        /// <summary>
+        /// Ensures the Graphics object exists. In UEFI mode, static managed references
+        /// can be zeroed between initialization and first use. This recreates Graphics
+        /// from the surviving VideoMemory/Width/Height value-type fields.
+        /// </summary>
+        public static void EnsureGraphics() {
+            // If VideoMemory got corrupted but Graphics survived with the correct pointer,
+            // restore VideoMemory from Graphics.
+            if (Graphics != null && (ulong)VideoMemory != (ulong)Graphics.VideoMemory) {
+                if ((ulong)Graphics.VideoMemory >= 0x80000000UL) {
+                    // Graphics has a plausible framebuffer address, restore it
+                    VideoMemory = Graphics.VideoMemory;
+                }
+            }
+            if (Graphics != null && (ulong)Graphics.VideoMemory == (ulong)VideoMemory) return;
+            if ((ulong)VideoMemory == 0 || Width == 0 || Height == 0) return;
+            Graphics = new Graphics(Width, Height, VideoMemory);
         }
 
         public static void Update() {

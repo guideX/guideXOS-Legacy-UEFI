@@ -88,6 +88,10 @@ unsafe class Program {
     /// </summary>
     private static int _cachedIconSize = 48;
     /// <summary>
+    /// UEFI direct renderer toggle (debug-only)
+    /// </summary>
+    private static bool _useUefiDirectRenderer = false;
+    /// <summary>
     /// Last Icon Cache Refresh
     /// </summary>
     private static ulong _lastIconCacheRefresh = 0;
@@ -146,20 +150,19 @@ unsafe class Program {
             BootConsole.WriteLine("[INPUT] Skipping PS/2 keyboard init (UEFI)");
 
             BootConsole.WriteLine("[USB] INIT");
-            // Always try to initialize USB, even in UEFI mode
+            // USB stack is optional in UEFI mode - EHCI may panic if BAR0 is unmapped
+            try {
+                Hub.Initialize();
+                HID.Initialize();
+                EHCI.Initialize();
+                USB.StartPolling();
 
-            //try {
-            Hub.Initialize();
-            HID.Initialize();
-            EHCI.Initialize();
-            USB.StartPolling();
-
-            // After USB init, check if USB HID mouse is available
-            MouseCapabilityDetector.CheckUsbHidMouse();
-            BootConsole.WriteLine("[USB] Initialization sequence complete");
-            //} catch {
-                //BootConsole.WriteLine("[USB] Init failed");
-            //}
+                // After USB init, check if USB HID mouse is available
+                MouseCapabilityDetector.CheckUsbHidMouse();
+                BootConsole.WriteLine("[USB] Initialization sequence complete");
+            } catch {
+                BootConsole.WriteLine("[USB] Init failed (non-fatal, continuing)");
+            }
             // Log final mouse detection result
             BootConsole.WriteLine("[INPUT] Mouse detection complete");
             BootConsole.WriteLine("[INPUT] Mouse enabled: " + MouseCapabilityDetector.MouseEnabled);
@@ -219,29 +222,18 @@ unsafe class Program {
             }
             
             BootConsole.WriteLine("[KMAIN] Calling SMain");
-            
-            // CRITICAL: Test if we can even call a function
-            Native.Out8(0x3F8, (byte)'P');
-            Native.Out8(0x3F8, (byte)'R');
-            Native.Out8(0x3F8, (byte)'E');
-            Native.Out8(0x3F8, (byte)'\n');
-            
-            // Test function call
-            TestFunction();
-            
-            Native.Out8(0x3F8, (byte)'C');
-            Native.Out8(0x3F8, (byte)'A');
-            Native.Out8(0x3F8, (byte)'L');
-            Native.Out8(0x3F8, (byte)'L');
-            Native.Out8(0x3F8, (byte)'\n');
+
+            // UEFI: Skip BitFont file loading here — File.Instance is unreliable at this
+            // stage (managed reference corruption). WindowManager.Initialize() already
+            // creates a dummy IFont fallback that the taskbar can use.
+            // BitFont from ramdisk can be loaded later in SMainSetupUefi after
+            // File.Instance is re-mounted from the surviving Disk.Instance.
+
+            // CRITICAL: Stop BootConsole from painting over framebuffer before entering GUI
+            // From this point forward, all logging goes to serial only
+            BootConsole.DrawDebugLines = false;
             
             SMain();
-            
-            // If we get here, SMain returned (shouldn't happen in infinite loop)
-            Native.Out8(0x3F8, (byte)'R');
-            Native.Out8(0x3F8, (byte)'E');
-            Native.Out8(0x3F8, (byte)'T');
-            Native.Out8(0x3F8, (byte)'\n');
         } else if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
             BootConsole.DrawDebugLines = true;
 
@@ -380,134 +372,155 @@ unsafe class Program {
         Native.Out8(0x3F8, (byte)'N');
         Native.Out8(0x3F8, (byte)']');
         Native.Out8(0x3F8, (byte)'\n');
-        
-        // CRITICAL: Test framebuffer IMMEDIATELY at function entry
-        if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
-            BootConsole.WriteLine("[SMAIN] UEFI MODE - Testing framebuffer access");
-            uint* testFb = Framebuffer.VideoMemory;
-            if (testFb == null) {
-                BootConsole.WriteLine("[SMAIN] ERROR: Framebuffer.VideoMemory is NULL!");
-                for (;;) Native.Hlt();
-            }
-            
-            BootConsole.WriteLine("[SMAIN] Framebuffer pointer valid - writing test pattern");
-            // Write a simple test pattern: 4 colored squares at the top-left corner
-            // Each square is 50x50 pixels
-            int fbW = Framebuffer.Width;
-            
-            // Square 1: RED (top-left)
-            for (int y = 0; y < 50; y++) {
-                for (int x = 0; x < 50; x++) {
-                    testFb[y * fbW + x] = 0xFFFF0000;
-                }
-            }
-            
-            // Square 2: GREEN (next to red)
-            for (int y = 0; y < 50; y++) {
-                for (int x = 50; x < 100; x++) {
-                    testFb[y * fbW + x] = 0xFF00FF00;
-                }
-            }
-            
-            // Square 3: BLUE (below red)
-            for (int y = 50; y < 100; y++) {
-                for (int x = 0; x < 50; x++) {
-                    testFb[y * fbW + x] = 0xFF0000FF;
-                }
-            }
-            
-            // Square 4: WHITE (bottom-right of the 4 squares)
-            for (int y = 50; y < 100; y++) {
-                for (int x = 50; x < 100; x++) {
-                    testFb[y * fbW + x] = 0xFFFFFFFF;
-                }
-            }
-            
-            BootConsole.WriteLine("[SMAIN] Test pattern written - you should see 4 colored squares");
-            BootConsole.WriteLine("[SMAIN] If you don't see them, the framebuffer is not displaying");
+
+        // Run setup in a separate method to keep SMain's stack frame minimal
+        SMainSetup();
+
+        BootConsole.WriteLine("[SMAIN] Setup complete - entering main loop");
+
+        // Add global Escape key handler to close active (topmost visible) window
+        // Skip in UEFI mode (Keyboard not initialized)
+        if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
+            SetupEscapeKeyHandler();
         }
-        
-        BootConsole.WriteLine("[SMAIN] Starting desktop rendering");
-        
-        // CRITICAL: Disable triple buffering for UEFI - might cause black screen
+
+        BootConsole.WriteLine("[SMAIN] Entering main render loop");
+
+        // Enter the main render loop (in a separate method to keep stack frames small)
+        RenderLoop();
+    }
+
+    /// <summary>
+    /// Setup phase for SMain - extracted to keep SMain's stack frame small.
+    /// NativeAOT allocates stack space for ALL local variables in a function's
+    /// prologue. A giant function causes a giant sub rsp,N that can overflow
+    /// the 512 KB UEFI stack.
+    /// </summary>
+    private static void SMainSetup() {
         if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
-            BootConsole.WriteLine("[SMAIN] UEFI mode - disabling triple buffering");
-            Framebuffer.TripleBuffered = false;
+            SMainSetupUefi();
         } else {
-            Framebuffer.TripleBuffered = true;
+            SMainSetupLegacy();
         }
+
+        FConsole = null; // Don't create console here - let it be created on-demand
+
+        // Initialize icons
+        SetupIcons();
+
+        // UEFI: Skip BitFont file loading — File.Instance's managed vtable is
+        // corrupted even after re-mount (FS Type shows garbage pointer).
+        // File.ReadAllBytes will hang (infinite loop in corrupted dispatch).
+        // WindowManager.Initialize() already creates a dummy IFont fallback.
+
+        // Context menus
+        SetupContextMenus();
+
+        // Widgets
+        SetupWidgets();
+    }
+
+    /// <summary>
+    /// UEFI-specific setup (framebuffer test, wallpaper, triple buffering)
+    /// </summary>
+    private static void SMainSetupUefi() {
+        BootConsole.WriteLine("[SMAIN] UEFI MODE");
+        BootConsole.WriteLine("[SMAIN] UEFI mode - disabling triple buffering");
+        Framebuffer.TripleBuffered = false;
+        // CRITICAL: In UEFI mode, static managed object references (like Framebuffer.Graphics
+        // and File.Instance) get zeroed between EntryPoint.KMain and Program.KMain.
+        // Value-type fields (VideoMemory pointer, Width, Height) survive.
+        // Recreate the Graphics object from the surviving fields.
+        BootConsole.WriteLine("[SMAIN] Framebuffer.Graphics is " + (Framebuffer.Graphics == null ? "NULL" : "OK"));
+        BootConsole.WriteLine("[SMAIN] Framebuffer.VideoMemory = " + ((ulong)Framebuffer.VideoMemory).ToString("x"));
+        Framebuffer.EnsureGraphics();
+        BootConsole.WriteLine("[SMAIN] After EnsureGraphics: " + (Framebuffer.Graphics == null ? "NULL" : "OK"));
+        if (Framebuffer.Graphics != null) {
+            BootConsole.WriteLine("[SMAIN] Graphics.VideoMemory = " + ((ulong)Framebuffer.Graphics.VideoMemory).ToString("x"));
+            // Verify the framebuffer is writable by drawing a test pixel
+            Framebuffer.Graphics.VideoMemory[0] = 0x00FF00FF; // Magenta test pixel
+            BootConsole.WriteLine("[SMAIN] Test pixel written OK");
+        } else {
+            BootConsole.WriteLine("[SMAIN] ERROR: EnsureGraphics failed!");
+        }
+        BootConsole.WriteLine("[SMAIN] UEFI mode - skipping wallpaper creation");
+        Wallpaper = null;
+        BootConsole.WriteLine("[SMAIN] Wallpaper created");
+    }
+
+    /// <summary>
+    /// Legacy-specific setup (wallpaper creation, triple buffering)
+    /// </summary>
+    private static void SMainSetupLegacy() {
+        BootConsole.WriteLine("[SMAIN] Starting desktop rendering");
+        Framebuffer.TripleBuffered = true;
 
         BootConsole.WriteLine("[SMAIN] Creating wallpaper");
-
-        // In UEFI mode, skip wallpaper creation - go straight to rendering loop
-        if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
-            BootConsole.WriteLine("[SMAIN] UEFI mode - skipping wallpaper creation");
-            Wallpaper = null;
-        } else {
-            Image wall = Wallpaper;
-            try {
-                BootConsole.WriteLine("[SMAIN] Checking existing wallpaper");
-                if (wall != null) {
-                    BootConsole.WriteLine("[SMAIN] Resizing existing wallpaper");
-                    Wallpaper = wall.ResizeImage(Framebuffer.Width, Framebuffer.Height);
-                    wall.Dispose(); // FIXED: Dispose original wallpaper
+        Image wall = Wallpaper;
+        try {
+            BootConsole.WriteLine("[SMAIN] Checking existing wallpaper");
+            if (wall != null) {
+                BootConsole.WriteLine("[SMAIN] Resizing existing wallpaper");
+                Wallpaper = wall.ResizeImage(Framebuffer.Width, Framebuffer.Height);
+                wall.Dispose();
+            } else {
+                BootConsole.WriteLine("[SMAIN] Creating default gradient wallpaper");
+                BootConsole.WriteLine("[SMAIN] FB size: " + Framebuffer.Width.ToString() + "x" + Framebuffer.Height.ToString());
+                Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height);
+                if (Wallpaper == null) {
+                    BootConsole.WriteLine("[SMAIN] ERROR: Wallpaper allocation returned null!");
+                } else if (Wallpaper.RawData == null) {
+                    BootConsole.WriteLine("[SMAIN] ERROR: Wallpaper.RawData is null!");
                 } else {
-                    BootConsole.WriteLine("[SMAIN] Creating default gradient wallpaper");
-                    BootConsole.WriteLine("[SMAIN] FB size: " + Framebuffer.Width.ToString() + "x" + Framebuffer.Height.ToString());
-                    
-                    // Create default wallpaper with teal gradient (top to bottom)
-                    Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height);
-                    
-                    if (Wallpaper == null) {
-                        BootConsole.WriteLine("[SMAIN] ERROR: Wallpaper allocation returned null!");
-                    } else if (Wallpaper.RawData == null) {
-                        BootConsole.WriteLine("[SMAIN] ERROR: Wallpaper.RawData is null!");
-                    } else {
-                        BootConsole.WriteLine("[SMAIN] Image allocated, drawing gradient...");
-                        
-                        // Simplified gradient - just fill with solid teal color for now
-                        int totalPixels = Framebuffer.Width * Framebuffer.Height;
-                        int tealColor = unchecked((int)0xFF0D7D77);
-                        
-                        for (int i = 0; i < totalPixels; i++) {
-                            Wallpaper.RawData[i] = tealColor;
-                        }
-                        
-                        BootConsole.WriteLine("[SMAIN] Solid color fill complete");
+                    BootConsole.WriteLine("[SMAIN] Image allocated, drawing gradient...");
+                    int totalPixels = Framebuffer.Width * Framebuffer.Height;
+                    int tealColor = unchecked((int)0xFF0D7D77);
+                    for (int i = 0; i < totalPixels; i++) {
+                        Wallpaper.RawData[i] = tealColor;
+                    }
+                    BootConsole.WriteLine("[SMAIN] Solid color fill complete");
+                }
+            }
+        } catch {
+            BootConsole.WriteLine("[SMAIN] Wallpaper creation exception - using solid color");
+            try {
+                Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height);
+                if (Wallpaper != null && Wallpaper.RawData != null) {
+                    int tealColor = unchecked((int)0xFF0D7D77);
+                    for (int i = 0; i < Framebuffer.Width * Framebuffer.Height; i++) {
+                        Wallpaper.RawData[i] = tealColor;
                     }
                 }
             } catch {
-                BootConsole.WriteLine("[SMAIN] Wallpaper creation exception - using solid color");
-                // Fallback: create wallpaper with solid teal color
-                try {
-                    Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height);
-                    if (Wallpaper != null && Wallpaper.RawData != null) {
-                        int tealColor = unchecked((int)0xFF0D7D77);
-                        for (int i = 0; i < Framebuffer.Width * Framebuffer.Height; i++) {
-                            Wallpaper.RawData[i] = tealColor;
-                        }
-                    }
-                } catch {
-                    BootConsole.WriteLine("[SMAIN] Fallback wallpaper also failed!");
-                }
+                BootConsole.WriteLine("[SMAIN] Fallback wallpaper also failed!");
             }
         }
-
         BootConsole.WriteLine("[SMAIN] Wallpaper created");
-        //Lockscreen.Run();
-        FConsole = null; // Don't create console here - let it be created on-demand
+    }
 
-        // Initialize background rotation manager and icons
+    /// <summary>
+    /// Initialize desktop icons (shared by both boot modes)
+    /// </summary>
+    private static void SetupIcons() {
         BootConsole.WriteLine("[SMAIN] Setting up icons");
+        BootConsole.WriteLine("[SMAIN] File.Instance = " + (File.Instance == null ? "NULL" : "OK"));
+        BootConsole.WriteLine("[SMAIN] Disk.Instance = " + (Disk.Instance == null ? "NULL" : "OK"));
+        // In UEFI mode, File.Instance can be zeroed even though it was set in EntryPoint.
+        // Re-mount from Disk.Instance if available.
+        if (File.Instance == null && Disk.Instance != null) {
+            BootConsole.WriteLine("[SMAIN] Re-mounting filesystem from surviving Disk.Instance");
+            try {
+                File.Instance = new RdskFS();
+                BootConsole.WriteLine("[SMAIN] Filesystem re-mounted OK");
+            } catch {
+                BootConsole.WriteLine("[SMAIN] Filesystem re-mount failed");
+            }
+        }
         if (File.Instance != null) {
             BootConsole.WriteLine("[SMAIN] Initializing background manager and icons");
-            
             if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
                 BackgroundRotationManager.Initialize();
-                // Initialize module system (built-in modules)
                 guideXOS.Modules.ModuleManager.InitializeBuiltins();
-                
-                // Initialize cached desktop icons (Legacy only - PNG decoding works)
                 try {
                     RefreshCachedIcons();
                     _lastIconCacheRefresh = Timer.Ticks;
@@ -520,7 +533,6 @@ unsafe class Program {
                     _cachedAudioIcon = new Image(48, 48);
                 }
             } else {
-                // UEFI mode: Skip PNG icons - use simple fallback
                 BootConsole.WriteLine("[SMAIN] UEFI mode - using fallback icons (no PNG)");
                 _cachedDocumentIcon = new Image(48, 48);
                 _cachedFolderIcon = new Image(48, 48);
@@ -529,77 +541,75 @@ unsafe class Program {
             }
         } else {
             BootConsole.WriteLine("[SMAIN] No filesystem - using fallback icons");
-            // Set up dummy icons
             _cachedDocumentIcon = new Image(48, 48);
             _cachedFolderIcon = new Image(48, 48);
             _cachedImageIcon = new Image(48, 48);
             _cachedAudioIcon = new Image(48, 48);
         }
+    }
 
-        // Ensure context menu exists
+    /// <summary>
+    /// Initialize context menus
+    /// </summary>
+    private static void SetupContextMenus() {
         BootConsole.WriteLine("[SMAIN] Creating context menus");
         if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
             if (RightMenu == null) {
                 RightMenu = new RightMenu();
                 RightMenu.Visible = false;
             }
-
-            // Create widget context menu
             widgetContextMenu = new WidgetContextMenu();
             widgetContextMenu.Visible = false;
             WindowManager.MoveToEnd(widgetContextMenu);
             BootConsole.WriteLine("[SMAIN] Context menus created (Legacy)");
         } else {
-            // UEFI mode: Skip context menus for now (require file access)
             BootConsole.WriteLine("[SMAIN] Context menus skipped (UEFI mode)");
             RightMenu = null;
             widgetContextMenu = null;
         }
+    }
 
+    /// <summary>
+    /// Initialize widgets (Legacy only)
+    /// </summary>
+    private static void SetupWidgets() {
         BootConsole.WriteLine("[SMAIN] Creating widgets");
         if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-            // Create performance widget (initially visible)
             PerfWidget = new PerformanceWidget();
-            PerfWidget.Visible = false; // Don't show standalone - will be in container
+            PerfWidget.Visible = false;
             WindowManager.MoveToEnd(PerfWidget);
 
-            // Create clock widget positioned below performance widget
             var clockWidget = new guideXOS.DockableWidgets.Clock(
-                PerfWidget.X,  // Same X position as performance widget
-                PerfWidget.Y + PerfWidget.Height + 10  // Below performance widget with 10px gap
+                PerfWidget.X,
+                PerfWidget.Y + PerfWidget.Height + 10
             );
-            clockWidget.Visible = false; // Don't show standalone - will be in container
+            clockWidget.Visible = false;
             WindowManager.MoveToEnd(clockWidget);
 
-            // Create monitor widget for system charts
             var monitorWidget = new guideXOS.DockableWidgets.Monitor();
-            monitorWidget.Visible = false; // Don't show standalone - will be in container
+            monitorWidget.Visible = false;
             WindowManager.MoveToEnd(monitorWidget);
 
-            // Create uptime widget to show system uptime
             var uptimeWidget = new guideXOS.DockableWidgets.Uptime(
-                PerfWidget.X,  // Same X position as other widgets
-                PerfWidget.Y + PerfWidget.Height + clockWidget.PreferredHeight + 20  // Below clock widget
+                PerfWidget.X,
+                PerfWidget.Y + PerfWidget.Height + clockWidget.PreferredHeight + 20
             );
-            uptimeWidget.Visible = false; // Don't show standalone - will be in container
+            uptimeWidget.Visible = false;
             WindowManager.MoveToEnd(uptimeWidget);
 
-            // Create a container and dock all widgets together
             var widgetContainer = new WidgetContainer(
-                Framebuffer.Width - 220,  // Position more to the left (was -160)
-                80  // Y position from top
+                Framebuffer.Width - 220,
+                80
             );
             widgetContainer.AddWidget(PerfWidget);
             widgetContainer.AddWidget(clockWidget);
             widgetContainer.AddWidget(monitorWidget);
             widgetContainer.AddWidget(uptimeWidget);
-            widgetContainer.Visible = UISettings.ShowWidgetsOnStartup; // Respect ShowWidgetsOnStartup setting
+            widgetContainer.Visible = UISettings.ShowWidgetsOnStartup;
             WindowManager.MoveToEnd(widgetContainer);
 
-            // Store reference for toggle button
             Program.WidgetsContainer = widgetContainer;
 
-            // Show small toggle button on the far right if widgets are hidden
             if (!UISettings.ShowWidgetsOnStartup) {
                 var toggle = new WidgetToggleButton(Framebuffer.Width - 26, 6);
                 WindowManager.MoveToEnd(toggle);
@@ -607,185 +617,87 @@ unsafe class Program {
             }
             BootConsole.WriteLine("[SMAIN] Widgets created (Legacy)");
         } else {
-            // UEFI mode: Skip widgets (require complex initialization)
             BootConsole.WriteLine("[SMAIN] Widgets skipped (UEFI mode)");
             PerfWidget = null;
             widgetContextMenu = null;
             Program.WidgetsContainer = null;
         }
+    }
 
-        // Console will be created on-demand when user opens it from Start Menu
-        // No longer auto-created at startup
-
-        BootConsole.WriteLine("[SMAIN] Setup complete - entering main loop");
-        // Show login screen immediately after unlocking
-        // var login = new guideXOS.GUI.LoginDialog();
-        // WindowManager.MoveToEnd(login);
-        // login.Visible = true;
-
-        //var welcome = new Welcome(500, 250);
-
-        //It freezes here too
-        //WindowManager.EnablePerfTracking();
-
-        // FIXED: Removed debug line "Console.WriteLine("Draw Start");" that was polluting FConsole output
-
-        // Add global Escape key handler to close active (topmost visible) window
-        // Skip in UEFI mode (Keyboard not initialized)
-        if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-            Keyboard.OnKeyChanged += (sender, key) => {
-                try {
-                    // Only handle Escape key press events
-                    if (key.Key == System.ConsoleKey.Escape && key.KeyState == System.ConsoleKeyState.Pressed) {
-                        // Block Escape key when workspace switcher is visible
-                        if (Desktop.Taskbar != null && Desktop.Taskbar.IsWorkspaceSwitcherVisible) {
-                            Desktop.Taskbar.CloseWorkspaceSwitcher();
-                            return;
-                        }
-
-                        // Find the topmost visible window and call OnGlobalKey on it
-                        for (int i = WindowManager.Windows.Count - 1; i >= 0; i--) {
-                            var window = WindowManager.Windows[i];
-                            if (window.Visible && !window.IsTombstoned) {
-                                // Call OnGlobalKey which will close the window if allowed
-                                window.OnGlobalKey(key);
-                                break; // Only affect the topmost visible window
-                            }
+    /// <summary>
+    /// Setup global Escape key handler (Legacy only)
+    /// </summary>
+    private static void SetupEscapeKeyHandler() {
+        Keyboard.OnKeyChanged += (sender, key) => {
+            try {
+                if (key.Key == System.ConsoleKey.Escape && key.KeyState == System.ConsoleKeyState.Pressed) {
+                    if (Desktop.Taskbar != null && Desktop.Taskbar.IsWorkspaceSwitcherVisible) {
+                        Desktop.Taskbar.CloseWorkspaceSwitcher();
+                        return;
+                    }
+                    for (int i = WindowManager.Windows.Count - 1; i >= 0; i--) {
+                        var window = WindowManager.Windows[i];
+                        if (window.Visible && !window.IsTombstoned) {
+                            window.OnGlobalKey(key);
+                            break;
                         }
                     }
-                } catch {
-                    // Ignore errors in global key handler to prevent crashes
                 }
-            };
-        }
+            } catch {
+                // Ignore errors in global key handler to prevent crashes
+            }
+        };
+    }
 
+    /// <summary>
+    /// Writes a single ASCII char to COM1 (serial port 0x3F8) for bare-metal debug.
+    /// </summary>
+    private static void SerialChar(char c) {
+        Native.Out8(0x3F8, (byte)c);
+    }
+
+    /// <summary>
+    /// Main render loop - extracted from SMain to keep stack frames small
+    /// </summary>
+    private static void RenderLoop() {
         int lastMouseX = Control.MousePosition.X;
         int lastMouseY = Control.MousePosition.Y;
         ulong lastMoveTick = Timer.Ticks;
-        const ulong ActiveMoveMs = 100; // stay responsive for 100ms after a move
-
-        // Add frame counter to verify loop is running
+        const ulong ActiveMoveMs = 100;
         int frameCounter = 0;
-        BootConsole.WriteLine("[SMAIN] Entering main render loop");
+        bool isUefi = (BootConsole.CurrentMode == guideXOS.BootMode.UEFI);
 
         for (; ; ) {
             try {
                 frameCounter++;
 
-                // In UEFI mode, use simplified direct framebuffer rendering
-                if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
-                    // Log first few frames to debug
-                    if (frameCounter <= 5) {
-                        Native.Out8(0x3F8, (byte)'F');
-                        Native.Out8(0x3F8, (byte)'R');
-                        Native.Out8(0x3F8, (byte)('0' + (frameCounter % 10)));
-                        Native.Out8(0x3F8, (byte)'\n');
-                    }
-                    
-                    uint* fb = Framebuffer.VideoMemory;
-                    int fbW = Framebuffer.Width;
-                    int fbH = Framebuffer.Height;
-                    
-                    // CRITICAL: Check if framebuffer is actually available
-                    if (fb == null || fbW <= 0 || fbH <= 0) {
-                        if (frameCounter == 1) {
-                            BootConsole.WriteLine("[SMAIN] ERROR: Invalid framebuffer!");
-                        }
-                        Thread.Sleep(10);
-                        continue;
-                    }
-                    
-                    // Standard RGB format (not BGRX - framebuffer already handles conversion)
-                    uint teal = 0xFF0D7D77;    // ARGB: Teal
-                    uint white = 0xFFFFFFFF;   // ARGB: White
-                    uint red = 0xFFFF0000;     // ARGB: Red
-                    uint blue = 0xFF0000FF;    // ARGB: Blue
-                    
-                    // Clear to teal background
-                    int totalPixels = fbW * fbH;
-                    for (int i = 0; i < totalPixels; i++) {
-                        fb[i] = teal;
-                    }
-                    
-                    // Draw white border (10px thick for visibility)
-                    // Top border
-                    for (int y = 0; y < 10 && y < fbH; y++) {
-                        for (int x = 0; x < fbW; x++) {
-                            fb[y * fbW + x] = white;
-                        }
-                    }
-                    // Bottom border
-                    for (int y = fbH - 10; y < fbH && y >= 0; y++) {
-                        for (int x = 0; x < fbW; x++) {
-                            fb[y * fbW + x] = white;
-                        }
-                    }
-                    // Left border
-                    for (int y = 0; y < fbH; y++) {
-                        for (int x = 0; x < 10 && x < fbW; x++) {
-                            fb[y * fbW + x] = white;
-                        }
-                    }
-                    // Right border
-                    for (int y = 0; y < fbH; y++) {
-                        for (int x = fbW - 10; x < fbW && x >= 0; x++) {
-                            fb[y * fbW + x] = white;
-                        }
-                    }
-                    
-                    // Draw large test square in center
-                    int centerX = fbW / 2 - 50;
-                    int centerY = fbH / 2 - 50;
-                    for (int dy = 0; dy < 100 && (centerY + dy) < fbH; dy++) {
-                        for (int dx = 0; dx < 100 && (centerX + dx) < fbW; dx++) {
-                            fb[(centerY + dy) * fbW + (centerX + dx)] = blue;
-                        }
-                    }
-                    
-                    // Draw cursor (simple white arrow)
-                    int cx = Control.MousePosition.X;
-                    int cy = Control.MousePosition.Y;
-                    for (int dy = 0; dy < 16; dy++) {
-                        int py = cy + dy;
-                        if (py < 0 || py >= fbH) continue;
-                        for (int dx = 0; dx < 16; dx++) {
-                            int px = cx + dx;
-                            if (px < 0 || px >= fbW) continue;
-                            // Draw arrow shape
-                            if (dy < 12 && dx < 8 && dx <= dy && dx < (12 - dy)) {
-                                fb[py * fbW + px] = white;
-                            }
-                        }
-                    }
-                    
-                    // Heartbeat indicator (flashing square at top-left corner)
-                    uint heartbeat = (frameCounter % 60 < 30) ? white : red;
-                    for (int dy = 20; dy < 40 && dy < fbH; dy++) {
-                        for (int dx = 20; dx < 40 && dx < fbW; dx++) {
-                            fb[dy * fbW + dx] = heartbeat;
-                        }
-                    }
-                    
-                    // Poll mouse every frame
-                    try {
-                        MouseEventDispatcher.Update();
-                    } catch { }
-                    
-                    // Use Thread.Sleep instead of busy-wait (more efficient and reliable)
-                    Thread.Sleep(16); // ~60 FPS
+                // In UEFI mode, optionally use simplified direct framebuffer rendering (debug-only)
+                if (isUefi && _useUefiDirectRenderer) {
+                    RenderFrameUefiDirect(frameCounter);
+                    Thread.Sleep(16);
                     continue;
                 }
 
-                // Reduce serial output in UEFI mode to improve performance
-                // Only log first frame
+                // Emit per-step serial markers for first 3 frames in UEFI mode
+                // Format: [F<n>:<step>] where step is a single letter
+                bool debugFrame = isUefi && (frameCounter <= 3);
+
+                if (debugFrame) { SerialChar('['); SerialChar('F'); SerialChar((char)('0' + (frameCounter % 10))); SerialChar(':'); SerialChar('A'); SerialChar(']'); } // A = start
+
                 bool shouldLog = (frameCounter == 1);
 
+                // CRITICAL: Ensure Graphics object exists and points at the real framebuffer.
+                Framebuffer.EnsureGraphics();
+
+                if (debugFrame) SerialChar('B'); // B = EnsureGraphics done
+
                 if (shouldLog) {
-                    BootConsole.WriteLine("[SMAIN] First frame rendered");
+                    // Use serial-only output to avoid BootConsole painting over the framebuffer
+                    SerialChar('F'); SerialChar('1'); SerialChar('\n');
                 }
 
-                // FIXED: Periodically refresh cached icons to prevent memory buildup (optional)
-                if (UISettings.EnableDesktopIconCacheRefresh && File.Instance != null) {
+                // Periodically refresh cached icons (skip in UEFI for now)
+                if (!isUefi && UISettings.EnableDesktopIconCacheRefresh && File.Instance != null) {
                     ulong intervalMs = (ulong)UISettings.DesktopIconCacheRefreshIntervalMinutes * 60000UL;
                     if (Timer.Ticks - _lastIconCacheRefresh >= intervalMs) {
                         RefreshCachedIcons();
@@ -793,199 +705,273 @@ unsafe class Program {
                     }
                 }
 
-                // Update background rotation manager (handles automatic rotation and fade transitions)
-                // Skip in UEFI mode
-                if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
+                // Update background rotation manager - Legacy only
+                if (!isUefi) {
                     try {
                         BackgroundRotationManager.Update();
-                    } catch {
-                        // Ignore background rotation errors
-                    }
+                    } catch { }
                 }
 
-                // Poll mouse input from all registered providers (UEFI, USB HID, etc.)
-                // Uses unified MouseEventDispatcher for source-agnostic event handling
-                // This updates Control.MousePosition and Control.MouseButtons
+                if (debugFrame) SerialChar('C'); // C = pre-mouse
+
+                // Poll mouse input
                 try {
                     MouseEventDispatcher.Update();
-                } catch {
-                    // Ignore mouse polling errors
-                }
+                } catch { }
 
-                // Per-frame input pass for all windows
+                if (debugFrame) SerialChar('D'); // D = post-mouse
+
+                // Per-frame input pass
                 WindowManager.MouseHandled = false;
                 try {
                     WindowManager.InputAll();
-                } catch {
-                    // Ignore input errors
+                } catch { }
+
+                if (debugFrame) SerialChar('E'); // E = post-input
+
+                // FlushPendingCreates - Legacy only
+                if (!isUefi) {
+                    try { WindowManager.FlushPendingCreates(); } catch { }
                 }
 
-                // Skip FlushPendingCreates in UEFI mode - might hang
-                if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-                    try {
-                        WindowManager.FlushPendingCreates();
-                    } catch {
-                        // Ignore window creation errors
-                    }
+                // Audio - Legacy only
+                if (!isUefi) {
+                    try { WAVPlayer.DoPlay(); } catch { }
                 }
 
-                // Service audio playback from main loop
-                // Skip in UEFI mode - WAVPlayer might hang
-                if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-                    try {
-                        WAVPlayer.DoPlay();
-                    } catch {
-                        // Ignore audio errors
-                    }
-                }
+                if (debugFrame) SerialChar('F'); // F = pre-clear
 
                 //clear screen
                 try {
-                    // In UEFI mode, skip clear - we'll draw full screen anyway
-                    if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
-                        // Use Stosd for fast clear - much faster than per-pixel loop
-                        Native.Stosd(Framebuffer.VideoMemory, 0x00000000, (ulong)(Framebuffer.Width * Framebuffer.Height));
-                    }
+                    // CRITICAL: Use Graphics.VideoMemory, not Framebuffer.VideoMemory.
+                    // In UEFI mode, Framebuffer.VideoMemory can be corrupted to a heap address
+                    // while Graphics.VideoMemory retains the correct framebuffer pointer.
+                    uint* vm = Framebuffer.Graphics.VideoMemory;
+                    Native.Stosd(vm, 0x00000000, (ulong)(Framebuffer.Width * Framebuffer.Height));
                 } catch {
-                    // Critical: if we can't clear screen, skip frame
+                    if (debugFrame) { SerialChar('!'); SerialChar('F'); SerialChar('\n'); }
                     Thread.Sleep(1);
                     continue;
                 }
 
-                //draw carpet or wallpaper - use BackgroundRotationManager for fade effects
+                if (debugFrame) SerialChar('G'); // G = post-clear, pre-background
+
+                //draw background
                 try {
-                    if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
+                    if (!isUefi) {
                         BackgroundRotationManager.DrawBackground();
                     } else {
-                        // UEFI mode: Draw directly to framebuffer for testing
-                        // First, draw a solid color to prove we can write to framebuffer
-                        uint* fb = Framebuffer.VideoMemory;
-                        int fbW = Framebuffer.Width;
-                        int fbH = Framebuffer.Height;
-                        
-                        // Draw teal background directly to framebuffer
-                        for (int y = 0; y < fbH; y++) {
-                            // Calculate gradient color (teal gradient)
-                            int t = (y * 128) / fbH; // 0-128 range
-                            uint color = (uint)(0x000D7D77 + (t << 16) + (t << 8) + t); // Lighter at bottom
-                            for (int x = 0; x < fbW; x++) {
-                                fb[y * fbW + x] = color;
-                            }
-                        }
+                        // UEFI: Write teal directly to framebuffer using raw pointer
+                        // Use 0xFF alpha for opaque (ARGB format: 0xAARRGGBB)
+                        // CRITICAL: Use Graphics.VideoMemory (correct address)
+                        Native.Stosd(Framebuffer.Graphics.VideoMemory, 0xFF0D7D77, (ulong)(Framebuffer.Width * Framebuffer.Height));
                     }
                 } catch {
-                    // Draw solid color fallback
+                    if (debugFrame) { SerialChar('!'); SerialChar('G'); }
+                    // Fallback: try raw fill using Graphics pointer
                     try {
-                        Framebuffer.Graphics.Clear(0xFF0D7D77);
+                        Native.Stosd(Framebuffer.Graphics.VideoMemory, 0xFF0D7D77, (ulong)(Framebuffer.Width * Framebuffer.Height));
                     } catch { }
                 }
 
-                //Inspects the system to see if the user has right clicked there is a small difference between these two functions
-                // Show desktop context menu only when right-click happened and no other window consumed the mouse.
-                // FIXED: Use bitwise AND instead of HasFlag() to avoid enum boxing (saves ~200 KB/minute)
-                try {
-                    if ((Control.MouseButtons & MouseButtons.Right) == MouseButtons.Right && !RightClicked && !WindowManager.MouseHandled) {
-                        RightClicked = true;
-                        if (RightMenu != null) {
-                            RightMenu.X = Control.MousePosition.X;
-                            RightMenu.Y = Control.MousePosition.Y;
-                            WindowManager.MoveToEnd(RightMenu);
-                            RightMenu.Visible = true;
+                if (debugFrame) SerialChar('H'); // H = post-background
+
+                // Context menu - skip in UEFI (RightMenu is null)
+                if (!isUefi) {
+                    try {
+                        if ((Control.MouseButtons & MouseButtons.Right) == MouseButtons.Right && !RightClicked && !WindowManager.MouseHandled) {
+                            RightClicked = true;
+                            if (RightMenu != null) {
+                                RightMenu.X = Control.MousePosition.X;
+                                RightMenu.Y = Control.MousePosition.Y;
+                                WindowManager.MoveToEnd(RightMenu);
+                                RightMenu.Visible = true;
+                            }
+                        } else if ((Control.MouseButtons & MouseButtons.Right) != MouseButtons.Right) {
+                            RightClicked = false;
                         }
-                    } else if ((Control.MouseButtons & MouseButtons.Right) != MouseButtons.Right) {
+                    } catch {
                         RightClicked = false;
                     }
-                } catch {
-                    // Ignore context menu errors
-                    RightClicked = false;
                 }
+
+                if (debugFrame) SerialChar('I'); // I = pre-desktop
 
                 // Draw desktop icons and taskbar
                 try {
-                    int iconSize = 48;
                     Desktop.Update(
                         _cachedDocumentIcon,
                         _cachedFolderIcon,
                         _cachedImageIcon,
                         _cachedAudioIcon,
-                        iconSize
+                        48
                     );
                 } catch {
-                    // Ignore desktop update errors
+                    if (debugFrame) { SerialChar('!'); SerialChar('I'); }
                 }
 
-                // Draw windows in layers to control z-order:
-                // 1. Regular windows (except Task Manager)
+                if (debugFrame) SerialChar('J'); // J = pre-windows
+
+                // Draw windows
                 try {
                     WindowManager.DrawAllExceptTaskManager();
                 } catch {
-                    // Ignore window drawing errors
+                    if (debugFrame) { SerialChar('!'); SerialChar('J'); }
                 }
 
-                // 2. Workspace switcher (if visible) - appears on top of regular windows
                 try {
                     if (Desktop.Taskbar != null) {
                         Desktop.Taskbar.DrawWorkspaceSwitcher();
                     }
-                } catch {
-                    // Ignore workspace switcher errors
-                }
+                } catch { }
 
-                // 3. Task Manager (always on top)
                 try {
                     WindowManager.DrawTaskManager();
-                } catch {
-                    // Ignore task manager drawing errors
-                }
+                } catch { }
 
-                // 4. Clean up closed windows to prevent memory leaks
                 try {
                     WindowManager.CleanupClosedWindows();
-                } catch {
-                    // Ignore cleanup errors
-                }
+                } catch { }
+
+                if (debugFrame) SerialChar('K'); // K = pre-cursor
 
                 //draw cursor
-                // FIXED: Use bitwise AND instead of HasFlag() to avoid enum boxing
                 try {
                     var img = (Control.MouseButtons & MouseButtons.Left) == MouseButtons.Left ? CursorMoving : Cursor;
                     if (img != null && img.RawData != null) {
                         Framebuffer.Graphics.DrawImage(Control.MousePosition.X, Control.MousePosition.Y, img);
                     } else {
-                        // Debug: log if cursor is null (only once per 600 frames)
-                        if (shouldLog) {
-                            BootConsole.WriteLine("CNULL");
-                        }
+                        if (debugFrame) { SerialChar('!'); SerialChar('K'); }
                     }
                 } catch {
-                    // Ignore cursor drawing errors
+                    if (debugFrame) { SerialChar('x'); SerialChar('K'); }
                 }
+
+                if (debugFrame) SerialChar('L'); // L = pre-update
 
                 //refresh screen
                 try {
                     Framebuffer.Update();
                 } catch {
-                    // Critical: if we can't update screen, skip frame
+                    if (debugFrame) { SerialChar('!'); SerialChar('L'); SerialChar('\n'); }
                     Thread.Sleep(1);
                     continue;
                 }
 
-                // Mouse responsiveness throttling: if mouse moved recently, keep minimal sleep (0) for max responsiveness.
-                // When idle, yield a bit to lower CPU usage.
+                if (debugFrame) { SerialChar('Z'); SerialChar('\n'); } // Z = frame complete
+
+                // Mouse responsiveness throttling
                 int mx = Control.MousePosition.X; int my = Control.MousePosition.Y;
                 if (mx != lastMouseX || my != lastMouseY) {
                     lastMouseX = mx; lastMouseY = my; lastMoveTick = Timer.Ticks;
-                    Thread.Sleep(0); // No sleep when mouse moving for maximum responsiveness
+                    Thread.Sleep(0);
                 } else {
                     ulong age = (Timer.Ticks >= lastMoveTick) ? (Timer.Ticks - lastMoveTick) : 0UL;
-                    if (age < ActiveMoveMs) Thread.Sleep(0); else Thread.Sleep(1); // Reduced from 2ms to 1ms for better responsiveness
+                    if (age < ActiveMoveMs) Thread.Sleep(0); else Thread.Sleep(1);
                 }
             } catch {
-                // Catch any unhandled exception in main loop
-                Thread.Sleep(10); // Prevent tight error loop
+                if (isUefi && frameCounter <= 3) {
+                    SerialChar('!'); SerialChar('!'); SerialChar('!'); SerialChar('\n');
+                }
+                Thread.Sleep(10);
             }
         }
-        // End of SMain - both Legacy and UEFI use the same rendering loop above
+    }
+
+    /// <summary>
+    /// Draw UEFI background (teal gradient) directly to framebuffer
+    /// </summary>
+    private static void DrawUefiBackground() {
+        uint* fb = Framebuffer.Graphics.VideoMemory;
+        int fbW = Framebuffer.Width;
+        int fbH = Framebuffer.Height;
+        for (int y = 0; y < fbH; y++) {
+            int t = (y * 128) / fbH;
+            uint color = (uint)(0xFF0D7D77 + (t << 16) + (t << 8) + t);
+            for (int x = 0; x < fbW; x++) {
+                fb[y * fbW + x] = color;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Debug-only UEFI direct framebuffer renderer (renders test pattern + cursor)
+    /// </summary>
+    private static void RenderFrameUefiDirect(int frameCounter) {
+        if (frameCounter <= 5) {
+            Native.Out8(0x3F8, (byte)'F');
+            Native.Out8(0x3F8, (byte)'R');
+            Native.Out8(0x3F8, (byte)('0' + (frameCounter % 10)));
+            Native.Out8(0x3F8, (byte)'\n');
+        }
+
+        uint* fb = Framebuffer.Graphics != null ? Framebuffer.Graphics.VideoMemory : Framebuffer.VideoMemory;
+        int fbW = Framebuffer.Width;
+        int fbH = Framebuffer.Height;
+
+        if (fb == null || fbW <= 0 || fbH <= 0) {
+            if (frameCounter == 1) {
+                BootConsole.WriteLine("[SMAIN] ERROR: Invalid framebuffer!");
+            }
+            Thread.Sleep(10);
+            return;
+        }
+
+        uint teal = 0xFF0D7D77;
+        uint white = 0xFFFFFFFF;
+        uint red = 0xFFFF0000;
+        uint blue = 0xFF0000FF;
+
+        int totalPixels = fbW * fbH;
+        for (int i = 0; i < totalPixels; i++) {
+            fb[i] = teal;
+        }
+
+        // White border
+        for (int y = 0; y < 10 && y < fbH; y++)
+            for (int x = 0; x < fbW; x++)
+                fb[y * fbW + x] = white;
+        for (int y = fbH - 10; y < fbH && y >= 0; y++)
+            for (int x = 0; x < fbW; x++)
+                fb[y * fbW + x] = white;
+        for (int y = 0; y < fbH; y++)
+            for (int x = 0; x < 10 && x < fbW; x++)
+                fb[y * fbW + x] = white;
+        for (int y = 0; y < fbH; y++)
+            for (int x = fbW - 10; x < fbW && x >= 0; x++)
+                fb[y * fbW + x] = white;
+
+        // Center square
+        int centerX = fbW / 2 - 50;
+        int centerY = fbH / 2 - 50;
+        for (int dy = 0; dy < 100 && (centerY + dy) < fbH; dy++)
+            for (int dx = 0; dx < 100 && (centerX + dx) < fbW; dx++)
+                fb[(centerY + dy) * fbW + (centerX + dx)] = blue;
+
+        // Cursor
+        int cx = Control.MousePosition.X;
+        int cy = Control.MousePosition.Y;
+        for (int dy = 0; dy < 16; dy++) {
+            int py = cy + dy;
+            if (py < 0 || py >= fbH) continue;
+            for (int dx = 0; dx < 16; dx++) {
+                int px = cx + dx;
+                if (px < 0 || px >= fbW) continue;
+                if (dy < 12 && dx < 8 && dx <= dy && dx < (12 - dy)) {
+                    fb[py * fbW + px] = white;
+                }
+            }
+        }
+
+        // Heartbeat
+        uint heartbeat = (frameCounter % 60 < 30) ? white : red;
+        for (int dy = 20; dy < 40 && dy < fbH; dy++)
+            for (int dx = 20; dx < 40 && dx < fbW; dx++)
+                fb[dy * fbW + dx] = heartbeat;
+
+        try {
+            MouseEventDispatcher.Update();
+        } catch { }
     }
 
     /// <summary>

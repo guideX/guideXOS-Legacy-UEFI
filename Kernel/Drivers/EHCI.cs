@@ -27,10 +27,14 @@ namespace guideXOS.Kernel.Drivers {
             device.WriteRegister(0x04, 0x04 | 0x02 | 0x01);
             uint bar0 = device.Bar0;
             BootConsole.WriteLine($"[EHCI] Bar0: {bar0.ToString("x2")}");
+            if (bar0 == 0) {
+                BootConsole.WriteLine("[EHCI] BAR0 is 0 (unmapped) - skipping EHCI init");
+                return;
+            }
             BaseAddr = bar0 + *(byte*)bar0;
             ushort ver = *(ushort*)(bar0 + 0x02);
             if (ver != 0x100) {
-                Panic.Error("This controller is not supported!");
+                BootConsole.WriteLine("[EHCI] Unsupported EHCI version - skipping");
                 return;
             }
             uint hcsparams = *(uint*)(bar0 + 0x04);
