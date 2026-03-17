@@ -19,6 +19,12 @@ namespace guideXOS.Kernel.Drivers {
         /// </summary>
         public static uint* VideoMemory;
         /// <summary>
+        /// Original framebuffer physical address set during Initialize().
+        /// This NEVER changes and is used by EnsureGraphics() to restore
+        /// VideoMemory if it gets corrupted in UEFI mode.
+        /// </summary>
+        public static uint* OriginalVideoMemory;
+        /// <summary>
         /// First Buffer
         /// </summary>
         public static uint* FirstBuffer;
@@ -58,20 +64,28 @@ namespace guideXOS.Kernel.Drivers {
         }
 
         /// <summary>
-        /// Ensures the Graphics object exists. In UEFI mode, static managed references
-        /// can be zeroed between initialization and first use. This recreates Graphics
-        /// from the surviving VideoMemory/Width/Height value-type fields.
+        /// Ensures the Graphics object exists and points at the real framebuffer.
+        /// In UEFI mode, static managed references (like Graphics) can be zeroed
+        /// and VideoMemory can be corrupted to a heap address. This method uses
+        /// OriginalVideoMemory (set once during Initialize) as the authoritative
+        /// framebuffer address.
         /// </summary>
         public static void EnsureGraphics() {
-            // If VideoMemory got corrupted but Graphics survived with the correct pointer,
-            // restore VideoMemory from Graphics.
-            if (Graphics != null && (ulong)VideoMemory != (ulong)Graphics.VideoMemory) {
-                if ((ulong)Graphics.VideoMemory >= 0x80000000UL) {
-                    // Graphics has a plausible framebuffer address, restore it
-                    VideoMemory = Graphics.VideoMemory;
+            // STEP 1: If OriginalVideoMemory is set, always trust it over VideoMemory.
+            // VideoMemory can get corrupted in UEFI mode; OriginalVideoMemory never changes.
+            if ((ulong)OriginalVideoMemory != 0) {
+                if ((ulong)VideoMemory != (ulong)OriginalVideoMemory) {
+                    VideoMemory = OriginalVideoMemory;
                 }
             }
+            // STEP 2: If Graphics survived and already points at VideoMemory, we're done.
             if (Graphics != null && (ulong)Graphics.VideoMemory == (ulong)VideoMemory) return;
+            // STEP 3: If Graphics exists but points elsewhere, fix it.
+            if (Graphics != null && (ulong)VideoMemory != 0) {
+                Graphics.VideoMemory = VideoMemory;
+                return;
+            }
+            // STEP 4: Recreate Graphics from scratch.
             if ((ulong)VideoMemory == 0 || Width == 0 || Height == 0) return;
             Graphics = new Graphics(Width, Height, VideoMemory);
         }
@@ -93,6 +107,7 @@ namespace guideXOS.Kernel.Drivers {
             Width = XRes;
             Height = YRes;
             VideoMemory = FB; // Video memory must be set before any operation that might clear/draw
+            OriginalVideoMemory = FB; // Permanent backup - NEVER overwritten
             FirstBuffer = (uint*)Allocator.Allocate((ulong)(XRes * YRes * 4));
             SecondBuffer = (uint*)Allocator.Allocate((ulong)(XRes * YRes * 4));
             Native.Stosd(FirstBuffer, 0, (ulong)(XRes * YRes));

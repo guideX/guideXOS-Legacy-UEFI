@@ -135,6 +135,13 @@ unsafe class Program {
             BootConsole.WriteLine("[MOUSE_CAPABILITIES] INITIALIZE");
             // UEFI mode: mark uefi=true and disable PS/2 fallback.
             MouseCapabilityDetector.DetectAndInitialize(null, true, false);
+            // Raw serial marker to confirm we returned from DetectAndInitialize
+            Native.Out8(0x3F8, (byte)'M');
+            Native.Out8(0x3F8, (byte)'C');
+            Native.Out8(0x3F8, (byte)'D');
+            Native.Out8(0x3F8, (byte)'O');
+            Native.Out8(0x3F8, (byte)'K');
+            Native.Out8(0x3F8, (byte)'\n');
             BootConsole.WriteLine("[MOUSE_CAPABILITIES] DEVICE CHOSEN: " + MouseCapabilityDetector.GetCapabilityName(MouseCapabilityDetector.PrimaryCapability));
             //try {
             BootConsole.WriteLine("[INPUT] INITIALIZE");
@@ -151,11 +158,15 @@ unsafe class Program {
 
             BootConsole.WriteLine("[USB] INIT");
             // USB stack is optional in UEFI mode - EHCI may panic if BAR0 is unmapped
+            // Skip EHCI entirely in UEFI mode to avoid accessing unmapped MMIO addresses
+            // that would cause page faults (uncatchable as C# exceptions)
             try {
                 Hub.Initialize();
                 HID.Initialize();
-                EHCI.Initialize();
-                USB.StartPolling();
+                // EHCI accesses PCI BAR0 MMIO which may not be identity-mapped in UEFI mode.
+                // A page fault here is fatal (not catchable). Skip EHCI in UEFI.
+                BootConsole.WriteLine("[USB] Skipping EHCI in UEFI mode (unmapped MMIO risk)");
+                // USB.StartPolling(); // Skip polling without EHCI
 
                 // After USB init, check if USB HID mouse is available
                 MouseCapabilityDetector.CheckUsbHidMouse();
@@ -430,9 +441,15 @@ unsafe class Program {
         // CRITICAL: In UEFI mode, static managed object references (like Framebuffer.Graphics
         // and File.Instance) get zeroed between EntryPoint.KMain and Program.KMain.
         // Value-type fields (VideoMemory pointer, Width, Height) survive.
-        // Recreate the Graphics object from the surviving fields.
+        // OriginalVideoMemory is the authoritative framebuffer address.
         BootConsole.WriteLine("[SMAIN] Framebuffer.Graphics is " + (Framebuffer.Graphics == null ? "NULL" : "OK"));
         BootConsole.WriteLine("[SMAIN] Framebuffer.VideoMemory = " + ((ulong)Framebuffer.VideoMemory).ToString("x"));
+        BootConsole.WriteLine("[SMAIN] Framebuffer.OriginalVideoMemory = " + ((ulong)Framebuffer.OriginalVideoMemory).ToString("x"));
+        // If VideoMemory got corrupted, restore from OriginalVideoMemory before EnsureGraphics
+        if ((ulong)Framebuffer.OriginalVideoMemory != 0 && (ulong)Framebuffer.VideoMemory != (ulong)Framebuffer.OriginalVideoMemory) {
+            BootConsole.WriteLine("[SMAIN] WARNING: VideoMemory corrupted! Restoring from OriginalVideoMemory");
+            Framebuffer.VideoMemory = Framebuffer.OriginalVideoMemory;
+        }
         Framebuffer.EnsureGraphics();
         BootConsole.WriteLine("[SMAIN] After EnsureGraphics: " + (Framebuffer.Graphics == null ? "NULL" : "OK"));
         if (Framebuffer.Graphics != null) {
@@ -688,6 +705,16 @@ unsafe class Program {
 
                 // CRITICAL: Ensure Graphics object exists and points at the real framebuffer.
                 Framebuffer.EnsureGraphics();
+
+                // UEFI safety: validate Graphics.VideoMemory points at the real framebuffer
+                // If OriginalVideoMemory is set, verify Graphics uses it (not a heap address)
+                if (isUefi && (ulong)Framebuffer.OriginalVideoMemory != 0) {
+                    if (Framebuffer.Graphics != null && (ulong)Framebuffer.Graphics.VideoMemory != (ulong)Framebuffer.OriginalVideoMemory) {
+                        // Graphics pointer was corrupted - fix it
+                        Framebuffer.Graphics.VideoMemory = Framebuffer.OriginalVideoMemory;
+                        Framebuffer.VideoMemory = Framebuffer.OriginalVideoMemory;
+                    }
+                }
 
                 if (debugFrame) SerialChar('B'); // B = EnsureGraphics done
 
