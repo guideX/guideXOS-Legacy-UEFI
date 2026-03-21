@@ -43,6 +43,14 @@ namespace paging
         EFI_PHYSICAL_ADDRESS physBase,
         UINTN sizeBytes);
 
+    // Helper to add an UNCACHED identity mapping for MMIO regions (framebuffer, APIC, etc.)
+    // Sets PTE_PCD | PTE_PWT to ensure writes go directly to hardware (no CPU caching).
+    EFI_STATUS MapIdentityRangeUncached(
+        EFI_SYSTEM_TABLE* SystemTable,
+        EFI_PHYSICAL_ADDRESS pml4Phys,
+        EFI_PHYSICAL_ADDRESS physBase,
+        UINTN sizeBytes);
+
     // Helper to add a mapping for [virtBase, virtBase+size) -> physBase
     EFI_STATUS MapRange(
         EFI_SYSTEM_TABLE* SystemTable,

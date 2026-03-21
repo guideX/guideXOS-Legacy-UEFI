@@ -719,13 +719,8 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     rangeCount++;
 
     // 6. Framebuffer - CRITICAL for any display output after ExitBootServices
-    if (v1BootInfo->FramebufferBase != 0 && v1BootInfo->FramebufferSize != 0) {
-        ranges[rangeCount] = (EFI_PHYSICAL_ADDRESS)v1BootInfo->FramebufferBase;
-        sizes[rangeCount] = (UINTN)v1BootInfo->FramebufferSize;
-        rangeCount++;
-        Print(L"Mapping framebuffer: %p size %Lu\n", 
-              (VOID*)(UINTN)v1BootInfo->FramebufferBase, v1BootInfo->FramebufferSize);
-    }
+    // NOTE: Mapped separately with uncached flags (PCD+PWT) AFTER BuildIdentityPageTables.
+    // Framebuffer is MMIO and must bypass CPU caches so writes reach the video hardware.
 
     // 7. Ramdisk - if loaded
     if (ramdiskPhys != 0 && ramdiskSize != 0) {
@@ -794,20 +789,9 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     rangeCount++;
     Print(L"Mapping low memory region: 0x100000 size 4MB\n");
     
-    // 13. Local APIC MMIO (required for UseAPIC bring-up)
-    // Most x86_64 systems use 0xFEE00000 for the LAPIC.
-    // If this region isn't mapped, the first LAPIC MMIO access will fault.
-    ranges[rangeCount] = 0xFEE00000ULL;
-    sizes[rangeCount] = 0x1000ULL; // 4KB
-    rangeCount++;
-    Print(L"Mapping Local APIC MMIO: 0xFEE00000 size 4KB\n");
-
-    // 14. IOAPIC MMIO (common default 0xFEC00000). Not strictly required for LAPIC timer,
-    // but needed once IOAPIC.Initialize() runs.
-    ranges[rangeCount] = 0xFEC00000ULL;
-    sizes[rangeCount] = 0x1000ULL; // 4KB
-    rangeCount++;
-    Print(L"Mapping IOAPIC MMIO: 0xFEC00000 size 4KB\n");
+    // 13 & 14. Local APIC and IOAPIC MMIO
+    // NOTE: Mapped separately with uncached flags (PCD+PWT) AFTER BuildIdentityPageTables.
+    // MMIO regions must bypass CPU caches for correct hardware access.
 
     Print(L"Building identity page tables with %u ranges...\n", (UINT32)rangeCount);
 
@@ -853,6 +837,58 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     }
 
     Print(L"Page tables built at PML4: %p\n", (VOID*)(UINTN)pt.Pml4Phys);
+
+    // === MAP MMIO REGIONS WITH UNCACHED FLAGS ===
+    // These regions are memory-mapped I/O and MUST bypass CPU caches.
+    // PTE_PCD + PTE_PWT = Strong Uncacheable (UC) memory type.
+    // Without this, framebuffer writes go to CPU cache and never reach the display.
+
+    // Framebuffer (MMIO - must be uncached for display output)
+    if (v1BootInfo->FramebufferBase != 0 && v1BootInfo->FramebufferSize != 0) {
+        EFI_STATUS st = guideXOS::paging::MapIdentityRangeUncached(
+            SystemTable,
+            pt.Pml4Phys,
+            (EFI_PHYSICAL_ADDRESS)v1BootInfo->FramebufferBase,
+            (UINTN)v1BootInfo->FramebufferSize);
+        if (EFI_ERROR(st)) {
+            Print(L"Failed to map framebuffer uncached\n");
+            return st;
+        }
+        Print(L"Mapping framebuffer (uncached): %p size %Lu\n", 
+              (VOID*)(UINTN)v1BootInfo->FramebufferBase, v1BootInfo->FramebufferSize);
+    }
+
+    // Local APIC MMIO (MMIO - must be uncached)
+    {
+        EFI_STATUS st = guideXOS::paging::MapIdentityRangeUncached(
+            SystemTable, pt.Pml4Phys, 0xFEE00000ULL, 0x1000ULL);
+        if (EFI_ERROR(st)) {
+            Print(L"Failed to map Local APIC uncached\n");
+            return st;
+        }
+        Print(L"Mapping Local APIC MMIO (uncached): 0xFEE00000 size 4KB\n");
+    }
+
+    // IOAPIC MMIO (MMIO - must be uncached)
+    {
+        EFI_STATUS st = guideXOS::paging::MapIdentityRangeUncached(
+            SystemTable, pt.Pml4Phys, 0xFEC00000ULL, 0x1000ULL);
+        if (EFI_ERROR(st)) {
+            Print(L"Failed to map IOAPIC uncached\n");
+            return st;
+        }
+        Print(L"Mapping IOAPIC MMIO (uncached): 0xFEC00000 size 4KB\n");
+    }
+
+    // Identity-map any new page table pages created by the uncached mappings
+    {
+        EFI_STATUS st = guideXOS::paging::IdentityMapPageTablePages(
+            SystemTable, pt.Pml4Phys);
+        if (EFI_ERROR(st)) {
+            Print(L"Failed to identity-map new page table pages\n");
+            return st;
+        }
+    }
 
     // === PRE-EXIT BOOT SERVICES ===
     // Boot splash is already displayed - skip debug markers that would overwrite it

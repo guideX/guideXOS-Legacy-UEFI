@@ -699,6 +699,7 @@ unsafe class Program {
                 // Format: [F<n>:<step>] where step is a single letter
                 bool debugFrame = isUefi && (frameCounter <= 3);
 
+
                 if (debugFrame) { SerialChar('['); SerialChar('F'); SerialChar((char)('0' + (frameCounter % 10))); SerialChar(':'); SerialChar('A'); SerialChar(']'); } // A = start
 
                 bool shouldLog = (frameCounter == 1);
@@ -714,6 +715,29 @@ unsafe class Program {
                         Framebuffer.Graphics.VideoMemory = Framebuffer.OriginalVideoMemory;
                         Framebuffer.VideoMemory = Framebuffer.OriginalVideoMemory;
                     }
+                }
+
+                // UEFI immediate framebuffer test: Write MAGENTA pixels at very start of frame
+                // This happens BEFORE any clear, so if visible, proves framebuffer access works
+                if (isUefi && frameCounter <= 3) {
+                    try {
+                        uint* fb = Framebuffer.OriginalVideoMemory;
+                        if (fb != null) {
+                            // Write magenta at bottom-right corner (won't be cleared by normal drawing)
+                            int bx = Framebuffer.Width - 60;
+                            int by = Framebuffer.Height - 60;
+                            int pitch = Framebuffer.Width;
+                            for (int y = 0; y < 50; y++) {
+                                for (int x = 0; x < 50; x++) {
+                                    int px = bx + x;
+                                    int py = by + y;
+                                    if (px >= 0 && px < Framebuffer.Width && py >= 0 && py < Framebuffer.Height) {
+                                        fb[py * pitch + px] = 0xFFFF00FF; // Magenta
+                                    }
+                                }
+                            }
+                        }
+                    } catch { }
                 }
 
                 if (debugFrame) SerialChar('B'); // B = EnsureGraphics done
@@ -768,6 +792,25 @@ unsafe class Program {
 
                 if (debugFrame) SerialChar('F'); // F = pre-clear
 
+                // UEFI Frame 1 diagnostics: Print framebuffer state
+                if (isUefi && frameCounter == 1) {
+                    SerialChar('['); SerialChar('F'); SerialChar('B'); SerialChar(':');
+                    // Print Width
+                    int w = Framebuffer.Width;
+                    SerialChar((char)('0' + (w / 1000) % 10));
+                    SerialChar((char)('0' + (w / 100) % 10));
+                    SerialChar((char)('0' + (w / 10) % 10));
+                    SerialChar((char)('0' + w % 10));
+                    SerialChar('x');
+                    // Print Height
+                    int h = Framebuffer.Height;
+                    SerialChar((char)('0' + (h / 1000) % 10));
+                    SerialChar((char)('0' + (h / 100) % 10));
+                    SerialChar((char)('0' + (h / 10) % 10));
+                    SerialChar((char)('0' + h % 10));
+                    SerialChar(']');
+                }
+
                 //clear screen
                 try {
                     // CRITICAL: Use Graphics.VideoMemory, not Framebuffer.VideoMemory.
@@ -792,6 +835,24 @@ unsafe class Program {
                         // Use 0xFF alpha for opaque (ARGB format: 0xAARRGGBB)
                         // CRITICAL: Use Graphics.VideoMemory (correct address)
                         Native.Stosd(Framebuffer.Graphics.VideoMemory, 0xFF0D7D77, (ulong)(Framebuffer.Width * Framebuffer.Height));
+                        
+                        // UEFI Frame 1: Write bright red test pattern at top-left corner
+                        // This should be visible if framebuffer writes are working
+                        if (frameCounter == 1) {
+                            uint* fb = Framebuffer.Graphics.VideoMemory;
+                            int pitch = Framebuffer.Width;
+                            // Draw a 50x50 red square at top-left
+                            for (int y = 0; y < 50 && y < Framebuffer.Height; y++) {
+                                for (int x = 0; x < 50 && x < Framebuffer.Width; x++) {
+                                    fb[y * pitch + x] = 0xFFFF0000; // Bright red
+                                }
+                            }
+                            // Draw white diagonal line to prove drawing works
+                            for (int i = 0; i < 100 && i < Framebuffer.Width && i < Framebuffer.Height; i++) {
+                                fb[i * pitch + i] = 0xFFFFFFFF; // White
+                            }
+                            SerialChar('R'); // R = red test pattern drawn
+                        }
                     }
                 } catch {
                     if (debugFrame) { SerialChar('!'); SerialChar('G'); }

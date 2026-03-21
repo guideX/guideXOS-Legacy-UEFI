@@ -84,7 +84,13 @@ namespace paging
         return EFI_SUCCESS;
     }
 
-    EFI_STATUS MapIdentityRange(EFI_SYSTEM_TABLE* SystemTable, EFI_PHYSICAL_ADDRESS pml4Phys, EFI_PHYSICAL_ADDRESS physBase, UINTN sizeBytes)
+    // Internal helper: identity-map with caller-specified extra PTE flags.
+    static EFI_STATUS MapIdentityRangeFlags(
+        EFI_SYSTEM_TABLE* SystemTable,
+        EFI_PHYSICAL_ADDRESS pml4Phys,
+        EFI_PHYSICAL_ADDRESS physBase,
+        UINTN sizeBytes,
+        UINT64 extraFlags)
     {
         if (sizeBytes == 0) return EFI_SUCCESS;
 
@@ -107,12 +113,24 @@ namespace paging
                 }
             }
             
-            // Map as RW executable (Present, Writable)
-            // NOTE: Removed PTE_G (Global) flag as it requires CR4.PGE to be set
-            pt[pti] = (UINT64)p | PTE_P | PTE_W;
+            // Map as RW executable (Present, Writable) + caller flags
+            pt[pti] = (UINT64)p | PTE_P | PTE_W | extraFlags;
         }
 
         return EFI_SUCCESS;
+    }
+
+    EFI_STATUS MapIdentityRange(EFI_SYSTEM_TABLE* SystemTable, EFI_PHYSICAL_ADDRESS pml4Phys, EFI_PHYSICAL_ADDRESS physBase, UINTN sizeBytes)
+    {
+        return MapIdentityRangeFlags(SystemTable, pml4Phys, physBase, sizeBytes, 0);
+    }
+
+    EFI_STATUS MapIdentityRangeUncached(EFI_SYSTEM_TABLE* SystemTable, EFI_PHYSICAL_ADDRESS pml4Phys, EFI_PHYSICAL_ADDRESS physBase, UINTN sizeBytes)
+    {
+        // PTE_PCD (Cache Disable) + PTE_PWT (Write-Through) = Strong Uncacheable (UC)
+        // This ensures writes to MMIO regions (framebuffer, APIC, etc.) go directly
+        // to hardware without being trapped in CPU caches.
+        return MapIdentityRangeFlags(SystemTable, pml4Phys, physBase, sizeBytes, PTE_PCD | PTE_PWT);
     }
 
     EFI_STATUS MapRange(
