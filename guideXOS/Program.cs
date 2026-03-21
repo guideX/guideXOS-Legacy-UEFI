@@ -124,6 +124,20 @@ unsafe class Program {
     }
 
     /// <summary>
+    /// Load a PNG image using PngLoader (UEFI-safe).
+    /// Returns null on any failure (no exceptions, no hangs).
+    /// </summary>
+    private static Image LoadPngSafe(string path) {
+        byte[] data = null;
+        try { data = File.ReadAllBytes(path); } catch { return null; }
+        if (data == null || data.Length < 33) return null;
+        Image result;
+        if (PngLoader.Load(data, out result) && result != null)
+            return result;
+        return null;
+    }
+
+    /// <summary>
     /// KMain
     /// </summary>
     public static void KMain() {
@@ -204,10 +218,12 @@ unsafe class Program {
             }
 
             BootConsole.WriteLine("[CURSOR] Creating cursor images");
-            try {
-                Cursor = new PNG(File.ReadAllBytes("Images/Cursor.png"));
-                BootConsole.WriteLine("[CURSOR] Cursor loaded from ramdisk");
-            } catch {
+            // Initialize PngLoader for UEFI-safe PNG decoding (no native P/Invoke)
+            if (!PngLoader.Initialize()) {
+                BootConsole.WriteLine("[CURSOR] PngLoader.Initialize FAILED");
+            }
+            Cursor = LoadPngSafe("Images/Cursor.png");
+            if (Cursor == null) {
                 BootConsole.WriteLine("[CURSOR] Cursor PNG failed, using fallback");
                 Cursor = new Image(16, 16);
                 if (Cursor != null && Cursor.RawData != null) {
@@ -224,9 +240,13 @@ unsafe class Program {
                         }
                     }
                 }
+            } else {
+                BootConsole.WriteLine("[CURSOR] Cursor loaded from ramdisk");
             }
-            try { CursorMoving = new PNG(File.ReadAllBytes("Images/Grab.png")); } catch { CursorMoving = Cursor; }
-            try { CursorBusy = new PNG(File.ReadAllBytes("Images/Busy.png")); } catch { CursorBusy = Cursor; }
+            CursorMoving = LoadPngSafe("Images/Grab.png");
+            if (CursorMoving == null) CursorMoving = Cursor;
+            CursorBusy = LoadPngSafe("Images/Busy.png");
+            if (CursorBusy == null) CursorBusy = Cursor;
             BootConsole.WriteLine("[CURSOR] Cursors created");
             BootConsole.WriteLine("[WM] INIT");
             try {
