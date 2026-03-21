@@ -17,30 +17,22 @@ namespace guideXOS.FS {
     ///     Data: raw bytes
     /// </summary>
     internal unsafe class RdskFS : FileSystem {
-        private Ramdisk _ramdisk;
 
         public RdskFS()
         {
             BootConsole.WriteLine("[RdskFS] Constructor called");
             FileSystemType = FS_TYPE_RDSK;
             
-            // Get direct ramdisk reference
-            _ramdisk = Ramdisk.Instance;
-            if (_ramdisk == null) {
-                BootConsole.WriteLine("[RdskFS] ERROR: Ramdisk.Instance is null!");
+            // Use the raw static pointer directly - it survives UEFI managed reference corruption
+            byte* ptr = Ramdisk.RawBasePointer;
+            if (ptr == null) {
+                BootConsole.WriteLine("[RdskFS] ERROR: RawBasePointer is null!");
                 return;
             }
             
-            BootConsole.WriteLine("[RdskFS] Got Ramdisk reference");
+            BootConsole.WriteLine("[RdskFS] Got raw pointer");
             
             // Validate RDSK header
-            byte* ptr = _ramdisk.GetRawPointer();
-            if (ptr == null) {
-                BootConsole.WriteLine("[RdskFS] ERROR: Raw pointer is null!");
-                return;
-            }
-            
-            // Check magic
             if (ptr[0] == (byte)'R' && ptr[1] == (byte)'D' && ptr[2] == (byte)'S' && ptr[3] == (byte)'K') {
                 BootConsole.WriteLine("[RdskFS] Magic OK");
             } else {
@@ -70,7 +62,8 @@ namespace guideXOS.FS {
                 searchPath = Name.Substring(1);
             }
             
-            byte* ptr = _ramdisk.GetRawPointer();
+            // Use static raw pointer directly - survives UEFI managed reference corruption
+            byte* ptr = Ramdisk.RawBasePointer;
             if (ptr == null) {
                 return null;
             }

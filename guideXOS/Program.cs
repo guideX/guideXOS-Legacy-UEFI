@@ -179,22 +179,28 @@ unsafe class Program {
             BootConsole.WriteLine("[INPUT] Mouse enabled: " + MouseCapabilityDetector.MouseEnabled);
 
             // CRITICAL: Re-mount filesystem early.
-            // In UEFI mode, File.Instance (a managed reference set in EntryPoint.KMain)
-            // gets zeroed by the time we reach Program.KMain. Disk.Instance (also a managed
-            // reference) survives because Ramdisk stores its pointer as a raw IntPtr field.
-            // Re-create the RdskFS wrapper so File.ReadAllBytes works for cursors, fonts, etc.
+            // In UEFI mode, ALL managed static references (File.Instance, Disk.Instance,
+            // Ramdisk.Instance) get zeroed between EntryPoint.KMain and Program.KMain.
+            // However, Ramdisk.RawBasePointer (a static byte*) survives because it's a
+            // value type, not a managed reference. Use it to reconstruct everything.
             BootConsole.WriteLine("[FS] Re-mounting filesystem for UEFI");
-            if (File.Instance == null && Disk.Instance != null) {
+            BootConsole.WriteLine("[FS] RawBasePointer = " + ((ulong)Ramdisk.RawBasePointer).ToString("x"));
+            if (Ramdisk.RawBasePointer != null) {
                 try {
+                    // Reconstruct Ramdisk from surviving raw pointer
+                    if (Disk.Instance == null) {
+                        BootConsole.WriteLine("[FS] Reconstructing Ramdisk from RawBasePointer");
+                        new Ramdisk((System.IntPtr)Ramdisk.RawBasePointer);
+                        BootConsole.WriteLine("[FS] Ramdisk reconstructed");
+                    }
+                    // Now mount RdskFS (uses RawBasePointer directly)
                     File.Instance = new RdskFS();
                     BootConsole.WriteLine("[FS] Filesystem re-mounted OK");
                 } catch {
                     BootConsole.WriteLine("[FS] Filesystem re-mount FAILED");
                 }
-            } else if (File.Instance != null) {
-                BootConsole.WriteLine("[FS] File.Instance already valid");
             } else {
-                BootConsole.WriteLine("[FS] WARNING: Disk.Instance is also NULL!");
+                BootConsole.WriteLine("[FS] FATAL: RawBasePointer is NULL - no ramdisk!");
             }
 
             BootConsole.WriteLine("[CURSOR] Creating cursor images");
@@ -554,11 +560,13 @@ unsafe class Program {
         BootConsole.WriteLine("[SMAIN] Setting up icons");
         BootConsole.WriteLine("[SMAIN] File.Instance = " + (File.Instance == null ? "NULL" : "OK"));
         BootConsole.WriteLine("[SMAIN] Disk.Instance = " + (Disk.Instance == null ? "NULL" : "OK"));
-        // In UEFI mode, File.Instance can be zeroed even though it was set in EntryPoint.
-        // Re-mount from Disk.Instance if available.
-        if (File.Instance == null && Disk.Instance != null) {
-            BootConsole.WriteLine("[SMAIN] Re-mounting filesystem from surviving Disk.Instance");
+        // Re-mount if needed (should already be done in KMain, but safety check)
+        if (File.Instance == null && Ramdisk.RawBasePointer != null) {
+            BootConsole.WriteLine("[SMAIN] Re-mounting filesystem from RawBasePointer");
             try {
+                if (Disk.Instance == null) {
+                    new Ramdisk((System.IntPtr)Ramdisk.RawBasePointer);
+                }
                 File.Instance = new RdskFS();
                 BootConsole.WriteLine("[SMAIN] Filesystem re-mounted OK");
             } catch {
