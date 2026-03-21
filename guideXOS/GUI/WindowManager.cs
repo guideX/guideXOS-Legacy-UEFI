@@ -48,19 +48,12 @@ namespace guideXOS.GUI {
         /// </summary>
         public static void Initialize() {
             Windows = new List<Window>();
-            // CRITICAL: PNG loading from File.ReadAllBytes() hangs!
-            // Create dummy images instead of loading PNGs
-            //CloseButton = new PNG(File.ReadAllBytes("Images/Close.png"));
-            CloseButton = new Image(16, 16);  // Dummy close button
-            //MinimizeButton = new PNG(File.ReadAllBytes("Images/BlueVelvet/16/down.png"));
-            MinimizeButton = new Image(16, 16);  // Dummy minimize button
-            //MaximizeButton = new PNG(File.ReadAllBytes("Images/BlueVelvet/16/image.png"));
-            MaximizeButton = new Image(16, 16);  // Dummy maximize button
+            // Load window button images from ramdisk (works in both Legacy and UEFI)
+            try { CloseButton = new PNG(File.ReadAllBytes("Images/Close.png")); } catch { CloseButton = new Image(16, 16); }
+            try { MinimizeButton = new PNG(File.ReadAllBytes("Images/BlueVelvet/16/down.png")); } catch { MinimizeButton = new Image(16, 16); }
+            try { MaximizeButton = new PNG(File.ReadAllBytes("Images/BlueVelvet/16/image.png")); } catch { MaximizeButton = new Image(16, 16); }
             try {
-                // CRITICAL: Font PNG loading hangs! Create dummy font
-                //PNG robotoBlack = new PNG(File.ReadAllBytes("Fonts/roboto/roboto_12pt_regular.png"));
-                Image robotoBlack = new Image(260, 160);  // Dummy font image
-                // FIXED: Charset must match ASCII order of the font image - percent sign must be at correct position
+                PNG robotoBlack = new PNG(File.ReadAllBytes("Fonts/roboto/roboto_12pt_regular.png"));
                 string charset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
                 font = new IFont(
                     robotoBlack,
@@ -70,13 +63,9 @@ namespace guideXOS.GUI {
                     15,
                     -5
                 );
-                // Diagnostic output
-                //font.DiagnoseFont();
             } catch {
-                BootConsole.WriteLine("[FONT] ERROR: Could not load quickening.png!");
                 BootConsole.WriteLine("[FONT] Falling back to placeholder font");
-                // Fallback to simple white blocks
-                Image simpleFontImg = new Image(260, 160); // 13 chars * 20px width, 8 rows * 20px height
+                Image simpleFontImg = new Image(260, 160);
                 for (int y = 0; y < simpleFontImg.Height; y++) {
                     for (int x = 0; x < simpleFontImg.Width; x++) {
                         simpleFontImg.RawData[y * simpleFontImg.Width + x] = unchecked((int)0xFFFFFFFF);

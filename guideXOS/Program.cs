@@ -177,45 +177,51 @@ unsafe class Program {
             // Log final mouse detection result
             BootConsole.WriteLine("[INPUT] Mouse detection complete");
             BootConsole.WriteLine("[INPUT] Mouse enabled: " + MouseCapabilityDetector.MouseEnabled);
+
+            // CRITICAL: Re-mount filesystem early.
+            // In UEFI mode, File.Instance (a managed reference set in EntryPoint.KMain)
+            // gets zeroed by the time we reach Program.KMain. Disk.Instance (also a managed
+            // reference) survives because Ramdisk stores its pointer as a raw IntPtr field.
+            // Re-create the RdskFS wrapper so File.ReadAllBytes works for cursors, fonts, etc.
+            BootConsole.WriteLine("[FS] Re-mounting filesystem for UEFI");
+            if (File.Instance == null && Disk.Instance != null) {
+                try {
+                    File.Instance = new RdskFS();
+                    BootConsole.WriteLine("[FS] Filesystem re-mounted OK");
+                } catch {
+                    BootConsole.WriteLine("[FS] Filesystem re-mount FAILED");
+                }
+            } else if (File.Instance != null) {
+                BootConsole.WriteLine("[FS] File.Instance already valid");
+            } else {
+                BootConsole.WriteLine("[FS] WARNING: Disk.Instance is also NULL!");
+            }
+
             BootConsole.WriteLine("[CURSOR] Creating cursor images");
-            // Create simple white arrow cursor
             try {
+                Cursor = new PNG(File.ReadAllBytes("Images/Cursor.png"));
+                BootConsole.WriteLine("[CURSOR] Cursor loaded from ramdisk");
+            } catch {
+                BootConsole.WriteLine("[CURSOR] Cursor PNG failed, using fallback");
                 Cursor = new Image(16, 16);
-                BootConsole.WriteLine("[CURSOR] Image allocated");
-                
                 if (Cursor != null && Cursor.RawData != null) {
-                    BootConsole.WriteLine("[CURSOR] Drawing cursor pattern");
-                    // Clear to transparent first
                     for (int i = 0; i < 16 * 16; i++) {
-                        Cursor.RawData[i] = 0; // Transparent
+                        Cursor.RawData[i] = 0;
                     }
-                    // Draw a larger, more visible white arrow
                     for (int y = 0; y < 16; y++) {
                         for (int x = 0; x < 16; x++) {
-                            // Larger arrow shape: classic pointer
                             if (y < 12 && x < 8 && x <= y && x < (12 - y)) {
-                                Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF); // White
-                            }
-                            // Add black outline for visibility
-                            else if (y < 13 && x < 9 && (x == y + 1 || x == (11 - y) || (y == 11 && x <= 7))) {
-                                Cursor.RawData[y * 16 + x] = unchecked((int)0xFF000000); // Black outline
+                                Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF);
+                            } else if (y < 13 && x < 9 && (x == y + 1 || x == (11 - y) || (y == 11 && x <= 7))) {
+                                Cursor.RawData[y * 16 + x] = unchecked((int)0xFF000000);
                             }
                         }
                     }
-                    BootConsole.WriteLine("[CURSOR] Fallback cursor drawn successfully");
-                } else {
-                    BootConsole.WriteLine("[CURSOR] ERROR: Cursor or RawData is null!");
                 }
-                CursorMoving = Cursor;
-                CursorBusy = Cursor;
-                BootConsole.WriteLine("[CURSOR] Fallback cursors created (UEFI)");
-            } catch {
-                BootConsole.WriteLine("[CURSOR] EXCEPTION during cursor creation!");
-                // Create a minimal fallback cursor
-                Cursor = null;
-                CursorMoving = null;
-                CursorBusy = null;
             }
+            try { CursorMoving = new PNG(File.ReadAllBytes("Images/Grab.png")); } catch { CursorMoving = Cursor; }
+            try { CursorBusy = new PNG(File.ReadAllBytes("Images/Busy.png")); } catch { CursorBusy = Cursor; }
+            BootConsole.WriteLine("[CURSOR] Cursors created");
             BootConsole.WriteLine("[WM] INIT");
             try {
                 WindowManager.Initialize();
@@ -454,14 +460,40 @@ unsafe class Program {
         BootConsole.WriteLine("[SMAIN] After EnsureGraphics: " + (Framebuffer.Graphics == null ? "NULL" : "OK"));
         if (Framebuffer.Graphics != null) {
             BootConsole.WriteLine("[SMAIN] Graphics.VideoMemory = " + ((ulong)Framebuffer.Graphics.VideoMemory).ToString("x"));
-            // Verify the framebuffer is writable by drawing a test pixel
-            Framebuffer.Graphics.VideoMemory[0] = 0x00FF00FF; // Magenta test pixel
-            BootConsole.WriteLine("[SMAIN] Test pixel written OK");
+            BootConsole.WriteLine("[SMAIN] EnsureGraphics OK");
         } else {
             BootConsole.WriteLine("[SMAIN] ERROR: EnsureGraphics failed!");
         }
-        BootConsole.WriteLine("[SMAIN] UEFI mode - skipping wallpaper creation");
-        Wallpaper = null;
+        // Create teal gradient wallpaper for UEFI desktop
+        BootConsole.WriteLine("[SMAIN] Creating UEFI wallpaper");
+        try {
+            Wallpaper = new Image(Framebuffer.Width, Framebuffer.Height);
+            if (Wallpaper != null && Wallpaper.RawData != null) {
+                uint topColor = 0xFF5FD4C4;
+                uint bottomColor = 0xFF0D7D77;
+                int topR = (int)((topColor >> 16) & 0xFF);
+                int topG = (int)((topColor >> 8) & 0xFF);
+                int topB = (int)(topColor & 0xFF);
+                int bottomR = (int)((bottomColor >> 16) & 0xFF);
+                int bottomG = (int)((bottomColor >> 8) & 0xFF);
+                int bottomB = (int)(bottomColor & 0xFF);
+                for (int y = 0; y < Framebuffer.Height; y++) {
+                    int t256 = (y * 256) / Framebuffer.Height;
+                    int r = topR + ((bottomR - topR) * t256) / 256;
+                    int g = topG + ((bottomG - topG) * t256) / 256;
+                    int b = topB + ((bottomB - topB) * t256) / 256;
+                    int color = unchecked((int)(0xFF000000 | (uint)(r << 16) | (uint)(g << 8) | (uint)b));
+                    int rowBase = y * Framebuffer.Width;
+                    for (int x = 0; x < Framebuffer.Width; x++) {
+                        Wallpaper.RawData[rowBase + x] = color;
+                    }
+                }
+                BootConsole.WriteLine("[SMAIN] Wallpaper gradient created");
+            }
+        } catch {
+            BootConsole.WriteLine("[SMAIN] Wallpaper creation failed - using null");
+            Wallpaper = null;
+        }
         BootConsole.WriteLine("[SMAIN] Wallpaper created");
     }
 
@@ -717,29 +749,6 @@ unsafe class Program {
                     }
                 }
 
-                // UEFI immediate framebuffer test: Write MAGENTA pixels at very start of frame
-                // This happens BEFORE any clear, so if visible, proves framebuffer access works
-                if (isUefi && frameCounter <= 3) {
-                    try {
-                        uint* fb = Framebuffer.OriginalVideoMemory;
-                        if (fb != null) {
-                            // Write magenta at bottom-right corner (won't be cleared by normal drawing)
-                            int bx = Framebuffer.Width - 60;
-                            int by = Framebuffer.Height - 60;
-                            int pitch = Framebuffer.Width;
-                            for (int y = 0; y < 50; y++) {
-                                for (int x = 0; x < 50; x++) {
-                                    int px = bx + x;
-                                    int py = by + y;
-                                    if (px >= 0 && px < Framebuffer.Width && py >= 0 && py < Framebuffer.Height) {
-                                        fb[py * pitch + px] = 0xFFFF00FF; // Magenta
-                                    }
-                                }
-                            }
-                        }
-                    } catch { }
-                }
-
                 if (debugFrame) SerialChar('B'); // B = EnsureGraphics done
 
                 if (shouldLog) {
@@ -831,32 +840,15 @@ unsafe class Program {
                     if (!isUefi) {
                         BackgroundRotationManager.DrawBackground();
                     } else {
-                        // UEFI: Write teal directly to framebuffer using raw pointer
-                        // Use 0xFF alpha for opaque (ARGB format: 0xAARRGGBB)
-                        // CRITICAL: Use Graphics.VideoMemory (correct address)
-                        Native.Stosd(Framebuffer.Graphics.VideoMemory, 0xFF0D7D77, (ulong)(Framebuffer.Width * Framebuffer.Height));
-                        
-                        // UEFI Frame 1: Write bright red test pattern at top-left corner
-                        // This should be visible if framebuffer writes are working
-                        if (frameCounter == 1) {
-                            uint* fb = Framebuffer.Graphics.VideoMemory;
-                            int pitch = Framebuffer.Width;
-                            // Draw a 50x50 red square at top-left
-                            for (int y = 0; y < 50 && y < Framebuffer.Height; y++) {
-                                for (int x = 0; x < 50 && x < Framebuffer.Width; x++) {
-                                    fb[y * pitch + x] = 0xFFFF0000; // Bright red
-                                }
-                            }
-                            // Draw white diagonal line to prove drawing works
-                            for (int i = 0; i < 100 && i < Framebuffer.Width && i < Framebuffer.Height; i++) {
-                                fb[i * pitch + i] = 0xFFFFFFFF; // White
-                            }
-                            SerialChar('R'); // R = red test pattern drawn
+                        // UEFI: Draw wallpaper or solid teal background
+                        if (Wallpaper != null && Wallpaper.RawData != null) {
+                            Framebuffer.Graphics.DrawImage(0, 0, Wallpaper);
+                        } else {
+                            Native.Stosd(Framebuffer.Graphics.VideoMemory, 0xFF0D7D77, (ulong)(Framebuffer.Width * Framebuffer.Height));
                         }
                     }
                 } catch {
                     if (debugFrame) { SerialChar('!'); SerialChar('G'); }
-                    // Fallback: try raw fill using Graphics pointer
                     try {
                         Native.Stosd(Framebuffer.Graphics.VideoMemory, 0xFF0D7D77, (ulong)(Framebuffer.Width * Framebuffer.Height));
                     } catch { }
