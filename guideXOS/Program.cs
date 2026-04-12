@@ -138,6 +138,28 @@ unsafe class Program {
     }
 
     /// <summary>
+    /// Create a procedural arrow cursor (16x16).
+    /// Used in UEFI mode where PNG decoding is unsafe.
+    /// </summary>
+    private static Image CreateFallbackCursor() {
+        var img = new Image(16, 16);
+        if (img == null || img.RawData == null) return img;
+        for (int i = 0; i < 16 * 16; i++) {
+            img.RawData[i] = 0;
+        }
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                if (y < 12 && x < 8 && x <= y && x < (12 - y)) {
+                    img.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF);
+                } else if (y < 13 && x < 9 && (x == y + 1 || x == (11 - y) || (y == 11 && x <= 7))) {
+                    img.RawData[y * 16 + x] = unchecked((int)0xFF000000);
+                }
+            }
+        }
+        return img;
+    }
+
+    /// <summary>
     /// KMain
     /// </summary>
     public static void KMain() {
@@ -218,36 +240,14 @@ unsafe class Program {
             }
 
             BootConsole.WriteLine("[CURSOR] Creating cursor images");
-            // Initialize PngLoader for UEFI-safe PNG decoding (no native P/Invoke)
-            if (!PngLoader.Initialize()) {
-                BootConsole.WriteLine("[CURSOR] PngLoader.Initialize FAILED");
-            }
-            Cursor = LoadPngSafe("Images/Cursor.png");
-            if (Cursor == null) {
-                BootConsole.WriteLine("[CURSOR] Cursor PNG failed, using fallback");
-                Cursor = new Image(16, 16);
-                if (Cursor != null && Cursor.RawData != null) {
-                    for (int i = 0; i < 16 * 16; i++) {
-                        Cursor.RawData[i] = 0;
-                    }
-                    for (int y = 0; y < 16; y++) {
-                        for (int x = 0; x < 16; x++) {
-                            if (y < 12 && x < 8 && x <= y && x < (12 - y)) {
-                                Cursor.RawData[y * 16 + x] = unchecked((int)0xFFFFFFFF);
-                            } else if (y < 13 && x < 9 && (x == y + 1 || x == (11 - y) || (y == 11 && x <= 7))) {
-                                Cursor.RawData[y * 16 + x] = unchecked((int)0xFF000000);
-                            }
-                        }
-                    }
-                }
-            } else {
-                BootConsole.WriteLine("[CURSOR] Cursor loaded from ramdisk");
-            }
-            CursorMoving = LoadPngSafe("Images/Grab.png");
-            if (CursorMoving == null) CursorMoving = Cursor;
-            CursorBusy = LoadPngSafe("Images/Busy.png");
-            if (CursorBusy == null) CursorBusy = Cursor;
-            BootConsole.WriteLine("[CURSOR] Cursors created");
+            // UEFI: Skip all PNG decoding for cursors.
+            // Both LodePNG (managed port) and PngLoader hang during DEFLATE
+            // decompression in the post-ExitBootServices environment, blocking
+            // the entire GUI from initialising. Use procedural cursors instead.
+            Cursor = CreateFallbackCursor();
+            CursorMoving = Cursor;
+            CursorBusy = Cursor;
+            BootConsole.WriteLine("[CURSOR] Cursors created (procedural fallback)");
             BootConsole.WriteLine("[WM] INIT");
             try {
                 WindowManager.Initialize();

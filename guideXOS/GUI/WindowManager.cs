@@ -48,7 +48,29 @@ namespace guideXOS.GUI {
         /// </summary>
         public static void Initialize() {
             Windows = new List<Window>();
-            // Load window button images from ramdisk (works in both Legacy and UEFI)
+            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                // UEFI: Skip PNG decoding — DEFLATE decompression hangs after
+                // ExitBootServices.  Use plain placeholder images instead.
+                CloseButton = new Image(16, 16);
+                MinimizeButton = new Image(16, 16);
+                MaximizeButton = new Image(16, 16);
+                BootConsole.WriteLine("[FONT] UEFI mode - using placeholder font");
+                Image simpleFontImg = new Image(260, 160);
+                for (int y = 0; y < simpleFontImg.Height; y++) {
+                    for (int x = 0; x < simpleFontImg.Width; x++) {
+                        simpleFontImg.RawData[y * simpleFontImg.Width + x] = unchecked((int)0xFFFFFFFF);
+                    }
+                }
+                font = new IFont(
+                    simpleFontImg,
+                    " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+                    20,
+                    true,
+                    11,
+                    -3
+                );
+            } else {
+            // Load window button images from ramdisk (Legacy mode)
             try { CloseButton = new PNG(File.ReadAllBytes("Images/Close.png")); } catch { CloseButton = new Image(16, 16); }
             try { MinimizeButton = new PNG(File.ReadAllBytes("Images/BlueVelvet/16/down.png")); } catch { MinimizeButton = new Image(16, 16); }
             try { MaximizeButton = new PNG(File.ReadAllBytes("Images/BlueVelvet/16/image.png")); } catch { MaximizeButton = new Image(16, 16); }
@@ -79,6 +101,7 @@ namespace guideXOS.GUI {
                     11,
                     -3
                 );
+            }
             }
             MouseHandled = false;
             _pending = new List<PendingWindow>();

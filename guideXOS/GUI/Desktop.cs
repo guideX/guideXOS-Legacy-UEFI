@@ -113,10 +113,14 @@ namespace guideXOS.GUI {
             BootConsole.WriteLine("[DESKTOP] INIT");
             Apps = null;
             IndexClicked = -1;
-            // Load taskbar icon from ramdisk (works in both Legacy and UEFI)
+            // Load taskbar icon — skip PNG decode in UEFI (DEFLATE hangs)
             Image taskbarIcon;
-            try { taskbarIcon = new PNG(File.ReadAllBytes("Images/startmenubutton.png")); }
-            catch { taskbarIcon = new Image(32, 32); }
+            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                taskbarIcon = new Image(32, 32);
+            } else {
+                try { taskbarIcon = new PNG(File.ReadAllBytes("Images/startmenubutton.png")); }
+                catch { taskbarIcon = new Image(32, 32); }
+            }
             Taskbar = new Taskbar(40, taskbarIcon);
             Dir = "";
             HomeMode = true;
