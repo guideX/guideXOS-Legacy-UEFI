@@ -240,12 +240,26 @@ unsafe class Program {
             }
 
             BootConsole.WriteLine("[CURSOR] Creating cursor images");
+            // Debug: Verify we're still in UEFI mode
+            Native.Out8(0x3F8, (byte)'[');
+            Native.Out8(0x3F8, (byte)'M');
+            Native.Out8(0x3F8, (byte)'O');
+            Native.Out8(0x3F8, (byte)'D');
+            Native.Out8(0x3F8, (byte)'E');
+            Native.Out8(0x3F8, (byte)'=');
+            byte modeVal = (byte)(BootConsole.CurrentMode == guideXOS.BootMode.UEFI ? 'U' : 'L');
+            Native.Out8(0x3F8, modeVal);
+            Native.Out8(0x3F8, (byte)']');
+            Native.Out8(0x3F8, (byte)'\n');
             // UEFI: Skip all PNG decoding for cursors.
             // Both LodePNG (managed port) and PngLoader hang during DEFLATE
             // decompression in the post-ExitBootServices environment, blocking
             // the entire GUI from initialising. Use procedural cursors instead.
+            BootConsole.WriteLine("[CURSOR] About to call CreateFallbackCursor()");
             Cursor = CreateFallbackCursor();
+            BootConsole.WriteLine("[CURSOR] CreateFallbackCursor() returned, assigning to CursorMoving");
             CursorMoving = Cursor;
+            BootConsole.WriteLine("[CURSOR] CursorMoving assigned, assigning to CursorBusy");
             CursorBusy = Cursor;
             BootConsole.WriteLine("[CURSOR] Cursors created (procedural fallback)");
             BootConsole.WriteLine("[WM] INIT");
@@ -278,6 +292,16 @@ unsafe class Program {
             
             SMain();
         } else if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy) {
+            // RAW serial marker to prove we entered Legacy path
+            Native.Out8(0x3F8, (byte)'[');
+            Native.Out8(0x3F8, (byte)'L');
+            Native.Out8(0x3F8, (byte)'E');
+            Native.Out8(0x3F8, (byte)'G');
+            Native.Out8(0x3F8, (byte)'A');
+            Native.Out8(0x3F8, (byte)'C');
+            Native.Out8(0x3F8, (byte)'Y');
+            Native.Out8(0x3F8, (byte)']');
+            Native.Out8(0x3F8, (byte)'\n');
             BootConsole.DrawDebugLines = true;
 
             BootConsole.WriteLine("[BOOT_MODE] LEGACY");

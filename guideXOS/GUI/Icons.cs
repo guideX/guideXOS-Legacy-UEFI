@@ -191,23 +191,44 @@ namespace guideXOS.GUI {
         /// <summary>
         /// Icons Private
         /// </summary>
-        private static IconsPrivate _iconsPrivate16 = new IconsPrivate(16);
+        private static IconsPrivate _iconsPrivate16;
         /// <summary>
         /// Icons Private
         /// </summary>
-        private static IconsPrivate _iconsPrivate24 = new IconsPrivate(24);
+        private static IconsPrivate _iconsPrivate24;
         /// <summary>
         /// Icons Private
         /// </summary>
-        private static IconsPrivate _iconsPrivate32 = new IconsPrivate(32);
+        private static IconsPrivate _iconsPrivate32;
         /// <summary>
         /// Icons Private 48
         /// </summary>
-        private static IconsPrivate _iconsPrivate48 = new IconsPrivate(48);
+        private static IconsPrivate _iconsPrivate48;
         /// <summary>
         /// Icons Private 128
         /// </summary>
-        private static IconsPrivate _iconsPrivate128 = new IconsPrivate(128);
+        private static IconsPrivate _iconsPrivate128;
+        
+        /// <summary>
+        /// Static constructor to initialize icons (deferred until first use)
+        /// </summary>
+        static Icons() {
+            // CRITICAL: In UEFI mode, skip PNG decoding entirely
+            // Icons will use fallback placeholders instead
+            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                _iconsPrivate16 = null;
+                _iconsPrivate24 = null;
+                _iconsPrivate32 = null;
+                _iconsPrivate48 = null;
+                _iconsPrivate128 = null;
+            } else {
+                _iconsPrivate16 = new IconsPrivate(16);
+                _iconsPrivate24 = new IconsPrivate(24);
+                _iconsPrivate32 = new IconsPrivate(32);
+                _iconsPrivate48 = new IconsPrivate(48);
+                _iconsPrivate128 = new IconsPrivate(128);
+            }
+        }
         /// <summary>
         /// Network Icon
         /// </summary>
@@ -425,17 +446,17 @@ namespace guideXOS.GUI {
         public static Image DocumentIcon(int size) {
             switch(size) {
                 case 16:
-                    return _iconsPrivate16.DocumentIcon;
+                    return _iconsPrivate16?.DocumentIcon ?? new Image(size, size);
                 case 24:
-                    return _iconsPrivate24.DocumentIcon;
+                    return _iconsPrivate24?.DocumentIcon ?? new Image(size, size);
                 case 32:
-                    return _iconsPrivate32.DocumentIcon;
+                    return _iconsPrivate32?.DocumentIcon ?? new Image(size, size);
                 case 48:
-                    return _iconsPrivate48.DocumentIcon;
+                    return _iconsPrivate48?.DocumentIcon ?? new Image(size, size);
                 case 128:
-                    return _iconsPrivate128.DocumentIcon;
+                    return _iconsPrivate128?.DocumentIcon ?? new Image(size, size);
                 default:
-                    return _iconsPrivate32.DocumentIcon;
+                    return _iconsPrivate32?.DocumentIcon ?? new Image(32, 32);
             }
         }
         /// <summary>
@@ -444,17 +465,17 @@ namespace guideXOS.GUI {
         public static Image ImageIcon(int size) {
             switch (size) {
                 case 16:
-                    return _iconsPrivate16.ImageIcon;
+                    return _iconsPrivate16?.ImageIcon ?? new Image(size, size);
                 case 24:
-                    return _iconsPrivate24.ImageIcon;
+                    return _iconsPrivate24?.ImageIcon ?? new Image(size, size);
                 case 32:
-                    return _iconsPrivate32.ImageIcon;
+                    return _iconsPrivate32?.ImageIcon ?? new Image(size, size);
                 case 48:
-                    return _iconsPrivate48.ImageIcon;
+                    return _iconsPrivate48?.ImageIcon ?? new Image(size, size);
                 case 128:
-                    return _iconsPrivate128.ImageIcon;
+                    return _iconsPrivate128?.ImageIcon ?? new Image(size, size);
                 default:
-                    return _iconsPrivate32.ImageIcon;
+                    return _iconsPrivate32?.ImageIcon ?? new Image(32, 32);
             }
         }
         /// <summary>
@@ -463,17 +484,17 @@ namespace guideXOS.GUI {
         public static Image AudioIcon(int size) {
             switch (size) {
                 case 16:
-                    return _iconsPrivate16.AudioIcon;
+                    return _iconsPrivate16?.AudioIcon ?? new Image(size, size);
                 case 24:
-                    return _iconsPrivate24.AudioIcon;
+                    return _iconsPrivate24?.AudioIcon ?? new Image(size, size);
                 case 32:
-                    return _iconsPrivate32.AudioIcon;
+                    return _iconsPrivate32?.AudioIcon ?? new Image(size, size);
                 case 48:
-                    return _iconsPrivate48.AudioIcon;
+                    return _iconsPrivate48?.AudioIcon ?? new Image(size, size);
                 case 128:
-                    return _iconsPrivate128.AudioIcon;
+                    return _iconsPrivate128?.AudioIcon ?? new Image(size, size);
                 default:
-                    return _iconsPrivate32.AudioIcon;
+                    return _iconsPrivate32?.AudioIcon ?? new Image(32, 32);
             }
         }
         /// <summary>
