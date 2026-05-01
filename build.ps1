@@ -116,7 +116,13 @@ Write-Header "Checking Build Tools"
 # Check for MSBuild
 if (-not $SkipBootloader) {
     $msbuild = $null
-    if (Test-Path "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe") {
+    if (Test-Path "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe") {
+        $msbuild = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe"
+    } elseif (Test-Path "C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Current\Bin\MSBuild.exe") {
+        $msbuild = "C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Current\Bin\MSBuild.exe"
+    } elseif (Test-Path "C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Current\Bin\MSBuild.exe") {
+        $msbuild = "C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+    } elseif (Test-Path "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe") {
         $msbuild = "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
     } elseif (Test-Path "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe") {
         $msbuild = "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe"
@@ -173,7 +179,13 @@ if (-not $SkipKernel) {
 $pythonExe = $null
 $pythonExeArgs = @()
 if ((-not $SkipRamdisk) -or (-not $SkipConversion)) {
-    if (Test-Command py) {
+    $bundledPython = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+    if (Test-Path $bundledPython) {
+        $pythonExe = $bundledPython
+        $pythonExeArgs = @()
+        $pythonVersion = & $pythonExe --version
+        Write-Success "Bundled Python found: $pythonVersion"
+    } elseif (Test-Command py) {
         $pythonExe = "py"
         $pythonExeArgs = @("-3")
         $pythonVersion = & $pythonExe @($pythonExeArgs + @("--version"))
@@ -219,9 +231,7 @@ if (-not $SkipConversion) {
     if ($objcopyPath) {
         Write-Success "objcopy found: $objcopyPath"
     } else {
-        Write-Warning "objcopy not found - you'll need to convert kernel.bin to ELF manually"
-        Write-Warning "Install MSYS2 or LLVM, or use WSL for conversion"
-        $SkipConversion = $true
+        Write-Warning "objcopy not found - using bundled Python PE-to-ELF converter instead"
     }
 }
 
@@ -323,6 +333,8 @@ if (-not $SkipKernel) {
 
     # Prefer the known ILCompiler native output
     $possibleOutputs = @(
+        "$RootDir\\bin\\x64\\Release\\net7.0\\win-x64\\native\\guideXOS.exe",
+        "$RootDir\\bin\\x64\\Release\\net7.0\\win-x64\\publish\\guideXOS.exe",
         "$RootDir\\bin\\Release\\net7.0\\win-x64\\native\\guideXOS.exe",
         "$RootDir\\guideXOS\\bin\\Release\\net7.0\\win-x64\\native\\guideXOS.exe",
         "$RootDir\\bin\\Release\\net7.0\\win-x64\\guideXOS.exe"
@@ -362,10 +374,14 @@ if (-not $SkipConversion) {
     Write-Header "[3/5] Converting Kernel to ELF64 Format"
     
     # The native kernel is in PE format (.exe)
-    $kernelPE = "$RootDir\bin\Release\net7.0\win-x64\native\guideXOS.exe"
+    $kernelPE = "$RootDir\bin\x64\Release\net7.0\win-x64\native\guideXOS.exe"
     if (-not (Test-Path $kernelPE)) {
         Write-Warning "Kernel PE not found at: $kernelPE"
         Write-Info "Trying alternate location..."
+        $kernelPE = "$RootDir\bin\Release\net7.0\win-x64\native\guideXOS.exe"
+    }
+    if (-not (Test-Path $kernelPE)) {
+        Write-Info "Trying project-local native output..."
         $kernelPE = "$RootDir\guideXOS\bin\Release\net7.0\win-x64\native\guideXOS.exe"
     }
     $kernelELF = "$RootDir\kernel.elf"
@@ -492,6 +508,8 @@ if (Test-Path $bootloaderSrcEfi) {
 } elseif (Test-Path $bootloaderSrcExe) {
     Copy-Item $bootloaderSrcExe $bootloaderDst -Force
     Write-Success "Copied bootloader: BOOTX64.EFI (from .exe)"
+} elseif ($SkipBootloader -and (Test-Path $bootloaderDst)) {
+    Write-Warning "Bootloader build skipped; preserving existing ESP BOOTX64.EFI"
 } else {
     Write-Error "Bootloader not found: $bootloaderSrcEfi or $bootloaderSrcExe"
     exit 1

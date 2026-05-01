@@ -239,6 +239,10 @@ namespace guideXOS.GUI {
         /// <param name="audioIcon"></param>
         /// <param name="iconSize"></param>
         public static void Update(Image documentIcon, Image folderIcon, Image imageIcon, Image audioIcon, int iconSize) {
+            // UEFI bring-up uses the boot splash as the desktop and avoids the
+            // managed Taskbar instance path, which is not stable after ExitBootServices.
+            if (BootConsole.CurrentMode == BootMode.UEFI) return;
+
             if (Program.WidgetsContainer != null) {
                 Program.WidgetsContainer.UpdateAutoHide();
             }

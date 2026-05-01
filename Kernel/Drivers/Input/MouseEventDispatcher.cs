@@ -107,6 +107,10 @@ namespace guideXOS.Kernel.Drivers.Input {
         /// </summary>
         public static void Update() {
             if (!_initialized) Initialize();
+
+            if (!MouseInputManager.HasAnyActiveProvider) {
+                return;
+            }
             
             // Poll MouseInputManager for events from all providers
             MouseInputManager.Poll();

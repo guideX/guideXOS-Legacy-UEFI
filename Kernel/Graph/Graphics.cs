@@ -31,10 +31,20 @@ namespace guideXOS.Graph {
             }
         }
         public virtual void FillRectangle(int X, int Y, int Width, int Height, uint Color) {
-            for (int w = 0; w < Width; w++) {
-                for (int h = 0; h < Height; h++) {
-                    DrawPoint(X + w, Y + h, Color);
-                }
+            int x0 = X;
+            int y0 = Y;
+            int x1 = X + Width;
+            int y1 = Y + Height;
+
+            if (x0 < 0) x0 = 0;
+            if (y0 < 0) y0 = 0;
+            if (x1 > this.Width) x1 = this.Width;
+            if (y1 > this.Height) y1 = this.Height;
+            if (x1 <= x0 || y1 <= y0 || VideoMemory == null) return;
+
+            ulong rowPixels = (ulong)(x1 - x0);
+            for (int y = y0; y < y1; y++) {
+                Native.Stosd(VideoMemory + (this.Width * y) + x0, Color, rowPixels);
             }
         }
         public virtual void AFillRectangle(int X, int Y, int Width, int Height, uint Color) {

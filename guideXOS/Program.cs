@@ -789,15 +789,19 @@ unsafe class Program {
                 bool shouldLog = (frameCounter == 1);
 
                 // CRITICAL: Ensure Graphics object exists and points at the real framebuffer.
-                Framebuffer.EnsureGraphics();
+                // In UEFI mode, this is only safe during the first GUI frame; repeated
+                // managed-reference repair can trip over post-ExitBootServices state.
+                if (!isUefi || frameCounter == 1) {
+                    Framebuffer.EnsureGraphics();
 
-                // UEFI safety: validate Graphics.VideoMemory points at the real framebuffer
-                // If OriginalVideoMemory is set, verify Graphics uses it (not a heap address)
-                if (isUefi && (ulong)Framebuffer.OriginalVideoMemory != 0) {
-                    if (Framebuffer.Graphics != null && (ulong)Framebuffer.Graphics.VideoMemory != (ulong)Framebuffer.OriginalVideoMemory) {
-                        // Graphics pointer was corrupted - fix it
-                        Framebuffer.Graphics.VideoMemory = Framebuffer.OriginalVideoMemory;
-                        Framebuffer.VideoMemory = Framebuffer.OriginalVideoMemory;
+                    // UEFI safety: validate Graphics.VideoMemory points at the real framebuffer
+                    // If OriginalVideoMemory is set, verify Graphics uses it (not a heap address)
+                    if (isUefi && (ulong)Framebuffer.OriginalVideoMemory != 0) {
+                        if (Framebuffer.Graphics != null && (ulong)Framebuffer.Graphics.VideoMemory != (ulong)Framebuffer.OriginalVideoMemory) {
+                            // Graphics pointer was corrupted - fix it
+                            Framebuffer.Graphics.VideoMemory = Framebuffer.OriginalVideoMemory;
+                            Framebuffer.VideoMemory = Framebuffer.OriginalVideoMemory;
+                        }
                     }
                 }
 
@@ -872,17 +876,17 @@ unsafe class Program {
                     SerialChar(']');
                 }
 
-                //clear screen
-                try {
-                    // CRITICAL: Use Graphics.VideoMemory, not Framebuffer.VideoMemory.
-                    // In UEFI mode, Framebuffer.VideoMemory can be corrupted to a heap address
-                    // while Graphics.VideoMemory retains the correct framebuffer pointer.
-                    uint* vm = Framebuffer.Graphics.VideoMemory;
-                    Native.Stosd(vm, 0x00000000, (ulong)(Framebuffer.Width * Framebuffer.Height));
-                } catch {
-                    if (debugFrame) { SerialChar('!'); SerialChar('F'); SerialChar('\n'); }
-                    Thread.Sleep(1);
-                    continue;
+                // Clear screen. In UEFI mode the GOP framebuffer is uncached MMIO;
+                // full-frame rep stosd is prohibitively slow and can stall boot.
+                if (!isUefi) {
+                    try {
+                        uint* vm = Framebuffer.Graphics.VideoMemory;
+                        Native.Stosd(vm, 0x00000000, (ulong)(Framebuffer.Width * Framebuffer.Height));
+                    } catch {
+                        if (debugFrame) { SerialChar('!'); SerialChar('F'); SerialChar('\n'); }
+                        Thread.Sleep(1);
+                        continue;
+                    }
                 }
 
                 if (debugFrame) SerialChar('G'); // G = post-clear, pre-background
@@ -892,18 +896,11 @@ unsafe class Program {
                     if (!isUefi) {
                         BackgroundRotationManager.DrawBackground();
                     } else {
-                        // UEFI: Draw wallpaper or solid teal background
-                        if (Wallpaper != null && Wallpaper.RawData != null) {
-                            Framebuffer.Graphics.DrawImage(0, 0, Wallpaper);
-                        } else {
-                            Native.Stosd(Framebuffer.Graphics.VideoMemory, 0xFF0D7D77, (ulong)(Framebuffer.Width * Framebuffer.Height));
-                        }
+                        // UEFI: avoid full-screen MMIO blits during bring-up.
+                        // The boot splash remains as the background while UI elements render.
                     }
                 } catch {
                     if (debugFrame) { SerialChar('!'); SerialChar('G'); }
-                    try {
-                        Native.Stosd(Framebuffer.Graphics.VideoMemory, 0xFF0D7D77, (ulong)(Framebuffer.Width * Framebuffer.Height));
-                    } catch { }
                 }
 
                 if (debugFrame) SerialChar('H'); // H = post-background
@@ -967,16 +964,19 @@ unsafe class Program {
 
                 if (debugFrame) SerialChar('K'); // K = pre-cursor
 
-                //draw cursor
-                try {
-                    var img = (Control.MouseButtons & MouseButtons.Left) == MouseButtons.Left ? CursorMoving : Cursor;
-                    if (img != null && img.RawData != null) {
-                        Framebuffer.Graphics.DrawImage(Control.MousePosition.X, Control.MousePosition.Y, img);
-                    } else {
-                        if (debugFrame) { SerialChar('!'); SerialChar('K'); }
+                // Draw cursor. UEFI has no active post-ExitBootServices pointer provider yet,
+                // so avoid managed cursor image blits during bring-up.
+                if (!isUefi) {
+                    try {
+                        var img = (Control.MouseButtons & MouseButtons.Left) == MouseButtons.Left ? CursorMoving : Cursor;
+                        if (img != null && img.RawData != null) {
+                            Framebuffer.Graphics.DrawImage(Control.MousePosition.X, Control.MousePosition.Y, img);
+                        } else {
+                            if (debugFrame) { SerialChar('!'); SerialChar('K'); }
+                        }
+                    } catch {
+                        if (debugFrame) { SerialChar('x'); SerialChar('K'); }
                     }
-                } catch {
-                    if (debugFrame) { SerialChar('x'); SerialChar('K'); }
                 }
 
                 if (debugFrame) SerialChar('L'); // L = pre-update

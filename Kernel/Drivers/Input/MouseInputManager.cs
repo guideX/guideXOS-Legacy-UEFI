@@ -66,6 +66,20 @@ namespace guideXOS.Kernel.Drivers.Input {
         public static bool IsInitialized => _isInitialized;
 
         /// <summary>
+        /// True only while a UEFI pointer provider exists and may still be polled.
+        /// Once ExitBootServices has occurred, firmware protocol pointers are invalid.
+        /// </summary>
+        public static bool HasActiveUefiPointerProvider =>
+            _uefiProvider != null &&
+            _uefiProvider.IsAvailable &&
+            !ExitBootServicesRules.HasExitedBootServices;
+
+        /// <summary>
+        /// True when at least one provider can currently produce mouse events.
+        /// </summary>
+        public static bool HasAnyActiveProvider => HasActiveUefiPointerProvider;
+
+        /// <summary>
         /// True after ExitBootServices has been called.
         /// Uses the centralized ExitBootServicesRules state.
         /// </summary>
@@ -155,8 +169,11 @@ namespace guideXOS.Kernel.Drivers.Input {
                 DebugLog("[MouseInputManager] UEFI BootInfo: SimplePointerProtocol = 0x" + ToHex16(simplePtr));
             }
 
+            if (ExitBootServicesRules.HasExitedBootServices) {
+                DebugLog("[MouseInputManager] ExitBootServices already occurred; skipping UEFI pointer protocol");
+            }
             // Check if simple pointer protocol is available
-            if (hasSimple && simplePtr != 0) {
+            else if (hasSimple && simplePtr != 0) {
                 DebugLog("[MouseInputManager] Simple pointer protocol found (BootInfo fields valid)");
                 if (SetUefiPointerProtocol(simplePtr)) {
                     DebugLog("[MouseInputManager] UEFI mouse initialized from boot info");
@@ -516,4 +533,3 @@ namespace guideXOS.Kernel.Drivers.Input {
         }
     }
 }
-

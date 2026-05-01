@@ -243,6 +243,12 @@ namespace guideXOS.Misc {
 
             // Initialize UEFI mouse input if available (before other subsystems)
             if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                // The UEFI bootloader exits boot services before entering KMain.
+                // Mark this before touching any firmware protocol pointers from BootInfo.
+                BootConsole.WriteLine("[EBS] Marking ExitBootServices as occurred");
+                ExitBootServicesRules.MarkExitBootServices();
+                BootConsole.WriteLine("[EBS] ExitBootServices marked");
+
                 BootConsole.WriteLine("[INPUT] Initializing UEFI mouse input");
                 try {
                     MouseInputManager.Initialize(bootInfo);
@@ -253,14 +259,6 @@ namespace guideXOS.Misc {
                     BootConsole.WriteLine("[INPUT] MouseInputManager initialization failed");
                 }
 
-                // CRITICAL: Mark that ExitBootServices has already occurred.
-                // The bootloader called ExitBootServices before jumping to the kernel,
-                // so UEFI Boot Services (including EFI_SIMPLE_POINTER_PROTOCOL) are
-                // no longer available. Without this, the render loop will try to call
-                // the UEFI pointer protocol on reclaimed memory, causing a hang/crash.
-                BootConsole.WriteLine("[EBS] Marking ExitBootServices as occurred");
-                ExitBootServicesRules.MarkExitBootServices();
-                BootConsole.WriteLine("[EBS] ExitBootServices marked");
             }
 
             if (BootConsole.CurrentMode == guideXOS.BootMode.Legacy)

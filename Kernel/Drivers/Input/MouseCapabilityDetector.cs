@@ -104,14 +104,17 @@ namespace guideXOS.Kernel.Drivers.Input {
             //     MouseInputManager.Initialize();
             // }
             
-            // Check if MouseInputManager already has a UEFI provider registered
-            if (uefi && MouseInputManager.IsInitialized) {
+            // Check if MouseInputManager already has a live UEFI provider registered.
+            // Firmware pointer protocols are not usable after ExitBootServices.
+            if (uefi && MouseInputManager.HasActiveUefiPointerProvider) {
                 DebugLog("[MouseCapability] MouseInputManager already initialized");
                 // The UEFI pointer was registered during EntryPoint initialization
                 _hasUefiSimplePointer = true;
                 _primaryCapability = MouseCapability.UefiSimplePointer;
                 _mouseEnabled = true;
                 DebugLog("[MouseCapability] Using pre-registered UEFI pointer");
+            } else if (uefi && ExitBootServicesRules.HasExitedBootServices) {
+                DebugLog("[MouseCapability] UEFI pointer unavailable after ExitBootServices");
             }
 
             // STEP 1: Check for UEFI pointer protocols (UEFI boot only) - skip if already set

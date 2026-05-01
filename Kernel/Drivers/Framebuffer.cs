@@ -91,6 +91,9 @@ namespace guideXOS.Kernel.Drivers {
         }
 
         public static void Update() {
+            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                return;
+            }
             if (TripleBuffered) {
                 for (int i = 0; i < Width * Height; i++) {
                     if (FirstBuffer[i] != SecondBuffer[i]) {

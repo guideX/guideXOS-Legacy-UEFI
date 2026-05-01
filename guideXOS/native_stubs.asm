@@ -433,40 +433,56 @@ In32:
 
 global Stosb
 Stosb:
+    push rdi
+    cld
     mov rdi, rcx
     mov al, dl
     mov rcx, r8
     rep stosb
+    pop rdi
     ret
 
 ; Stosd(void* p, uint value, ulong count) => RCX=p, EDX=value, R8=count
 
 global Stosd
 Stosd:
+    push rdi
+    cld
     mov rdi, rcx
     mov eax, edx
     mov rcx, r8
     rep stosd
+    pop rdi
     ret
 
 ; Movsb(void* dest, void* source, ulong count) => RCX=dest, RDX=src, R8=count
 
 global Movsb
 Movsb:
+    push rdi
+    push rsi
+    cld
     mov rdi, rcx
     mov rsi, rdx
     mov rcx, r8
     rep movsb
+    pop rsi
+    pop rdi
     ret
 
 ; Movsd(uint* dest, uint* source, ulong count) => RCX=dest, RDX=src, R8=count
 
 global Movsd
 Movsd:
+    push rdi
+    push rsi
+    cld
     mov rdi, rcx
     mov rsi, rdx
     mov rcx, r8
     rep movsd
+    pop rsi
+    pop rdi
     ret
 
 ; Descriptor table loaders. Expect pointer refs passed by ref in C#.
