@@ -164,9 +164,11 @@ public static class IDT {
         if (irq == 0x20) {
             // Debug: entering timer IRQ handler (no wait loop)
             _irq0Count++;
+            bool logIrq0 = BootConsole.CurrentMode != guideXOS.BootMode.UEFI && _irq0Count <= 5;
             
-            // Only log first few IRQ0s to avoid flooding serial
-            if (_irq0Count <= 5) {
+            // Only log first few IRQ0s outside UEFI; in UEFI these interleave with
+            // normal boot diagnostics and make the serial log hard to trust.
+            if (logIrq0) {
                 BootConsole.WriteLine("IRQ0");
             }
             
@@ -174,7 +176,7 @@ public static class IDT {
             Timer.OnInterrupt();
             
             // Debug: after Timer.OnInterrupt
-            if (_irq0Count <= 5) {
+            if (logIrq0) {
                 BootConsole.WriteLine("TOK");
             }
             
@@ -183,7 +185,7 @@ public static class IDT {
             ThreadPool.Schedule(stack);
             
             // Debug: after Schedule
-            if (_irq0Count <= 5) {
+            if (logIrq0) {
                 BootConsole.WriteLine("SCH");
             }
             
@@ -191,7 +193,7 @@ public static class IDT {
             Interrupts.EndOfInterrupt((byte)irq);
             
             // Debug: after EOI, about to return
-            if (_irq0Count <= 5) {
+            if (logIrq0) {
                 BootConsole.WriteLine("EOI");
             }
             

@@ -31,8 +31,8 @@ ELF: Loading seg 5: vaddr=0x1043f000 -> phys=0x3dbba000 (filesz=0x5000)
 ELF: Loading seg 6: vaddr=0x10444000 -> phys=0x3dbbf000 (filesz=0x200)
 ELF: Loading seg 7: vaddr=0x10445000 -> phys=0x3dbc0000 (filesz=0x600)
 ELF: Entry point in segment 2 (vaddr 0x10004000)
-ELF: Entry vaddr=0x1002bcf4, offset=0x2acf4, physEntry=0x3d7a6cf4
-Kernel entry phys: 0x000000003D7A6CF4 virt: 0x000000001002BCF4
+ELF: Entry vaddr=0x1002bd0c, offset=0x2ad0c, physEntry=0x3d7a6d0c
+Kernel entry phys: 0x000000003D7A6D0C virt: 0x000000001002BD0C
 Kernel loaded at: 0x000000003D77C000 - 0x000000003DBC0600
 Ramdisk size: 22473292 bytes
 Ramdisk loaded at 0x000000003C20D000
@@ -72,7 +72,7 @@ Magic: 0x49425847
 Framebuffer: 0x0000000080000000 (0x00000500x0x00000320)
 
 === Kernel Entry Validation ===
-Entry point: 0x000000003D7A6CF4
+Entry point: 0x000000003D7A6D0C
 First 16 bytes at entry:
   55 41 57 41 56 41 55 41 54 57 56 53 48 83 EC 58
   [OK] Looks like valid x64 function prologue
@@ -84,7 +84,7 @@ First 16 bytes at entry:
 ========================================
 
 --- Parameters ---
-Kernel Entry: 0x000000003D7A6CF4
+Kernel Entry: 0x000000003D7A6D0C
 BootInfo:     0x000000003DBDD000
 Stack Top:    0x0000000000280000
 PML4 Phys:    0x000000003DBDA000
@@ -92,7 +92,7 @@ PML4 Phys:    0x000000003DBDA000
 --- Validating Mappings ---
 
 [1] Kernel Entry:
-Checking mapping for: 0x000000003D7A6CF4
+Checking mapping for: 0x000000003D7A6D0C
   PML4[0x00000000] = 0x000000003DBD9003
   PDPT[0x00000000] = 0x000000003DBD8003
   PD[0x000001EB] = 0x000000003DBD6003
@@ -137,7 +137,7 @@ Checking mapping for: 0x0000000080000000
 
 
 [BOOT] Validating VIRTUAL kernel entry mapping:
-Checking mapping for: 0x000000001002BCF4
+Checking mapping for: 0x000000001002BD0C
   PML4[0x00000000] = 0x000000003DBD9003
   PDPT[0x00000000] = 0x000000003DBD8003
   PD[0x00000080] = 0x000000003C161003
@@ -145,7 +145,7 @@ Checking mapping for: 0x000000001002BCF4
   [OK] Maps to physical: 0x000000003D7A6000
 [BOOT] About to handoff via trampoline...
 [BOOT] Trampoline at: 0x000000003DBDB000
-[BOOT] Kernel entry: 0x000000003D7A6CF4
+[BOOT] Kernel entry: 0x000000003D7A6D0C
 [BOOT] BootInfo at: 0x000000003DBDD000
 [BOOT] Stack top: 0x0000000000280000
 [BOOT] PML4: 0x000000003DBDA000
@@ -160,12 +160,12 @@ Checking mapping for: 0x000000003DBDB000
 
 [BOOT] === CALLING TRAMPOLINE NOW ===
 [BOOT] Jumping to VIRTUAL entry point
-T3SJ1002BCF4
+T3SJ1002BD0C
 FG
 PRE000000003D7A6023
 *+B000000000027FFE0
 !C00000668
-D@WIYZ>S0038T000000001002BCF4
+D@WIYZ>S0038T000000001002BD0C
 !K4155415641574155
 X#
 ^
@@ -255,12 +255,7 @@ SCH
 EOI
 OK
 RET
-IRQ0
-TOK
-SCH
-EOI
-TPRET
-[SCHED] ThIRQ0
+TPRETIRQ0
 TOK
 SCH
 EOI
@@ -268,7 +263,12 @@ IRQ0
 TOK
 SCH
 EOI
-readPool.Initialize complete
+
+[SCHED] ThreadPool.Initialize compleIRQ0
+TOK
+SCH
+EOI
+te
 [APIC] STI (Local APIC timer active)
 [BOOT] Post-STI continue
 [BOOT] About to cleanup splash
@@ -299,8 +299,8 @@ DIR:5244534B01000000ED01000009005245
 [MouseCapability] Falling back to keyboard emulation
 [MouseCapability] ========================================
 [MouseCapability] Detection complete
-[MouseCapability] Primary: None
-[MouseCapability] Mouse enabled: False
+[MouseCapability] Primary: Keyboard Emulation
+[MouseCapability] Mouse enabled: True
 [MouseCapability] ----------------------------------------
 [MouseCapability] Capabilities detected:
 [MouseCapability] ========================================
@@ -338,3 +338,34 @@ MCDOK
 [FONT] UEFI mode - using placeholder font
 [WM] INIT complete
 [DESKTOP] INIT
+[DESKTOP] INIT complete
+[KMAIN] Calling SMain
+[SMAIN]
+[SMAIN] UEFI MODE
+[SMAIN] UEFI mode - disabling triple buffering
+[SMAIN] Framebuffer.Graphics is OK
+[SMAIN] Framebuffer.VideoMemory = 2147483648
+[SMAIN] Framebuffer.OriginalVideoMemory = 2147483648
+[SMAIN] After EnsureGraphics: OK
+[SMAIN] Graphics.VideoMemory = 2147483648
+[SMAIN] EnsureGraphics OK
+[SMAIN] Creating UEFI wallpaper
+[SMAIN] Wallpaper gradient created
+[SMAIN] Wallpaper created
+[SMAIN] Setting up icons
+[SMAIN] File.Instance = OK
+[SMAIN] Disk.Instance = OK
+[SMAIN] Initializing background manager and icons
+[SMAIN] UEFI mode - using fallback icons (no PNG)
+[SMAIN] Creating context menus
+[SMAIN] Context menus skipped (UEFI mode)
+[SMAIN] Creating widgets
+[SMAIN] Widgets skipped (UEFI mode)
+[SMAIN] Setup complete - entering main loop
+[SMAIN] Entering main render loop
+[F1:A]BF1
+C[MouseEventDispatcher] Initialized
+[MouseEventDispatcher] Initialized
+DEF[FB:1280x0800]GHIJKLZ
+[F2:A]BCDEFGHIJKLZ
+[F3:A]BCDEFGHIJKLZ

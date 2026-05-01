@@ -992,6 +992,13 @@ unsafe class Program {
 
                 if (debugFrame) { SerialChar('Z'); SerialChar('\n'); } // Z = frame complete
 
+                if (isUefi) {
+                    DrawUefiHeartbeat(frameCounter);
+                    if ((frameCounter & 0xFFF) == 0) {
+                        SerialChar('H'); SerialChar('B'); SerialChar('\n');
+                    }
+                }
+
                 // Mouse responsiveness throttling
                 int mx = Control.MousePosition.X; int my = Control.MousePosition.Y;
                 if (mx != lastMouseX || my != lastMouseY) {
@@ -1022,6 +1029,33 @@ unsafe class Program {
             uint color = (uint)(0xFF0D7D77 + (t << 16) + (t << 8) + t);
             for (int x = 0; x < fbW; x++) {
                 fb[y * fbW + x] = color;
+            }
+        }
+    }
+    /// <summary>
+    /// Tiny UEFI proof-of-life marker drawn directly to GOP memory.
+    /// </summary>
+    private static void DrawUefiHeartbeat(int frameCounter) {
+        uint* fb = Framebuffer.OriginalVideoMemory != null
+            ? Framebuffer.OriginalVideoMemory
+            : (Framebuffer.VideoMemory != null
+                ? Framebuffer.VideoMemory
+                : (Framebuffer.Graphics != null ? Framebuffer.Graphics.VideoMemory : null));
+        int fbW = Framebuffer.Width;
+        int fbH = Framebuffer.Height;
+
+        if (fb == null || fbW <= 0 || fbH <= 0) {
+            return;
+        }
+
+        uint color = ((frameCounter / 30) & 1) == 0 ? 0xFFFFFFFFu : 0xFFFF3040u;
+        int maxY = fbH < 24 ? fbH : 24;
+        int maxX = fbW < 24 ? fbW : 24;
+
+        for (int y = 8; y < maxY; y++) {
+            int row = y * fbW;
+            for (int x = 8; x < maxX; x++) {
+                fb[row + x] = color;
             }
         }
     }
