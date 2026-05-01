@@ -86,7 +86,6 @@ namespace guideXOS.GUI {
             string menuText = _isDocked ? "Undock" : "Dock";
             int textY = Y + (Height / 2) - (WindowManager.font.FontSize / 2);
             WindowManager.font.DrawString(X + 8, textY, menuText);
-            menuText.Dispose();
             
             // Border
             Framebuffer.Graphics.DrawRectangle(X, Y, Width, Height, 0xFF444444, 1);

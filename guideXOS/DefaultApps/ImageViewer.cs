@@ -2,8 +2,7 @@ using guideXOS.GUI;
 using guideXOS.Kernel.Drivers;
 using System.Drawing;
 using System.Windows.Forms;
-using System; // For ConsoleKey
-
+using System;
 namespace guideXOS.DefaultApps {
     /// <summary>
     /// Image Viewer
@@ -13,30 +12,25 @@ namespace guideXOS.DefaultApps {
         /// Original image (full size)
         /// </summary>
         private Image _originalImage;
-        
         /// <summary>
         /// Currently displayed image (scaled)
         /// </summary>
         private Image _displayImage;
-        
         /// <summary>
         /// Current zoom level (1.0 = 100%)
         /// </summary>
         private float _zoomLevel = 1.0f;
-        
         /// <summary>
         /// Pan offsets for when zoomed in
         /// </summary>
         private int _panX = 0;
         private int _panY = 0;
-        
         /// <summary>
         /// Mouse tracking for panning
         /// </summary>
         private bool _isPanning = false;
         private int _panStartX, _panStartY;
         private int _panStartOffsetX, _panStartOffsetY;
-        
         /// <summary>
         /// Constructor
         /// </summary>
@@ -50,7 +44,6 @@ namespace guideXOS.DefaultApps {
             ShowTombstone = true;
             Title = "ImageViewer";
         }
-        
         /// <summary>
         /// On Draw
         /// </summary>
@@ -61,7 +54,6 @@ namespace guideXOS.DefaultApps {
                 int drawX = X + Width / 2 - _displayImage.Width / 2 + _panX;
                 int drawY = Y + Height / 2 - _displayImage.Height / 2 + _panY;
                 Framebuffer.Graphics.DrawImage(drawX, drawY, _displayImage);
-                
                 // Show zoom level in title
                 int zoomPct = (int)(_zoomLevel * 100);
                 string zoomText = zoomPct.ToString() + "%";
@@ -181,12 +173,14 @@ namespace guideXOS.DefaultApps {
         /// </summary>
         /// <param name="image"></param>
         public void SetImage(Image image) {
-            // Dispose old images
-            if (_originalImage != null) {
-                _originalImage.Dispose();
-            }
+            // Dispose old display image first (it may reference originalImage data)
             if (_displayImage != null && _displayImage != _originalImage) {
                 _displayImage.Dispose();
+                _displayImage = null;
+            }
+            if (_originalImage != null) {
+                _originalImage.Dispose();
+                _originalImage = null;
             }
             
             // Store original
@@ -200,14 +194,18 @@ namespace guideXOS.DefaultApps {
             // Create display image
             UpdateDisplayImage();
         }
-        
+        /// <summary>
+        /// Releases Resources
+        /// </summary>
         public override void Dispose() {
-            if (_originalImage != null) {
-                _originalImage.Dispose();
-            }
-            if (_displayImage != null && _displayImage != _originalImage) {
-                _displayImage.Dispose();
-            }
+            // Null out references before base.Dispose().
+            // base.Dispose() calls FreeOwnerMemory which bulk-frees all
+            // allocations owned by this window.  Calling Image.Dispose()
+            // here would free the backing array first, and then
+            // FreeOwnerMemory would attempt to free the same pages again,
+            // causing a double-free page fault / kernel panic.
+            _displayImage = null;
+            _originalImage = null;
             base.Dispose();
         }
     }

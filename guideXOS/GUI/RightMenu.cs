@@ -175,12 +175,13 @@ namespace guideXOS.GUI {
             WindowManager.font.DrawString(X + 8, y + (itemH / 2) - (WindowManager.font.FontSize / 2), "Display Options"); y += itemH;
             
             // Performance Widget toggle
-            string perfLabel = "Performance Widget";
-            if (Program.PerfWidget != null && Program.PerfWidget.Visible) {
-                perfLabel += " ?";
+            bool perfVisible = Program.PerfWidget != null && Program.PerfWidget.Visible;
+            if (perfVisible) {
+                string perfLabel = "Performance Widget ?";
+                WindowManager.font.DrawString(X + 8, y + (itemH / 2) - (WindowManager.font.FontSize / 2), perfLabel);
+            } else {
+                WindowManager.font.DrawString(X + 8, y + (itemH / 2) - (WindowManager.font.FontSize / 2), "Performance Widget");
             }
-            WindowManager.font.DrawString(X + 8, y + (itemH / 2) - (WindowManager.font.FontSize / 2), perfLabel); 
-            perfLabel.Dispose();
             y += itemH;
             
             // Save Settings (only when not in LiveMode)

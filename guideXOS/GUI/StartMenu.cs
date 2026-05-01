@@ -28,6 +28,9 @@ namespace guideXOS.GUI {
         private const int MenuW = 120;
         private const int MenuPad = 6;
 
+        // Scroll arrow button height (drawn at top/bottom of scrollbar track)
+        private const int ScrollArrowH = 20;
+
         // Recent programs scrolling
         private int _scroll;
         private bool _scrollDrag;
@@ -265,8 +268,25 @@ namespace guideXOS.GUI {
                     return;
                 }
 
-                // Scrollbar drag start
-                if (mx >= sbX && mx <= sbX + sbW && my >= listY && my <= listY + listH) { _scrollDrag = true; _scrollStartY = my; _scrollStartScroll = _scroll; return; }
+                // Scroll arrow buttons at top and bottom of scrollbar
+                int scrollArrowUpY = listY;
+                int scrollArrowDnY = listY + listH - ScrollArrowH;
+                int trackY = listY + ScrollArrowH;
+                int trackH = listH - ScrollArrowH * 2;
+                int totalForArrow = (_showAllPrograms ? (Desktop.Apps.Length + (_allProgramsWindows != null ? _allProgramsWindows.Count : 0)) : RecentManager.Programs.Count) * Spacing;
+                int maxScrollArrow = totalForArrow - listH; if (maxScrollArrow < 0) maxScrollArrow = 0;
+                // Up arrow click: scroll up one page
+                if (mx >= sbX && mx <= sbX + sbW && my >= scrollArrowUpY && my < scrollArrowUpY + ScrollArrowH) {
+                    int ns = _scroll - listH; if (ns < 0) ns = 0;
+                    if (ns != _scroll) { _scroll = ns; _frameDirty = true; } return;
+                }
+                // Down arrow click: scroll down one page
+                if (mx >= sbX && mx <= sbX + sbW && my >= scrollArrowDnY && my <= scrollArrowDnY + ScrollArrowH) {
+                    int ns = _scroll + listH; if (ns > maxScrollArrow) ns = maxScrollArrow;
+                    if (ns != _scroll) { _scroll = ns; _frameDirty = true; } return;
+                }
+                // Scrollbar drag start (only in track between arrows)
+                if (mx >= sbX && mx <= sbX + sbW && my >= trackY && my <= trackY + trackH) { _scrollDrag = true; _scrollStartY = my; _scrollStartScroll = _scroll; return; }
 
                 // Click in right column
                 if (mx >= rcX && mx <= rcX + rcW && my >= rcY && my <= rcY + rcH) {
@@ -430,16 +450,17 @@ namespace guideXOS.GUI {
                 int maxScroll = total - listH; if (maxScroll < 0) maxScroll = 0;
                 int dy = my - _scrollStartY;
                 
-                // Convert pixel delta to scroll value based on thumb position
-                int thumbH = listH;
-                if (total > listH) {
-                    thumbH = (listH * listH) / total;
+                // Convert pixel delta to scroll value based on thumb position in track area (between arrows)
+                int trackArea = listH - ScrollArrowH * 2;
+                int thumbH = trackArea;
+                if (total > listH && trackArea > 0) {
+                    thumbH = (trackArea * listH) / total;
                     if (thumbH < 16) thumbH = 16;
-                    if (thumbH > listH) thumbH = listH;
+                    if (thumbH > trackArea) thumbH = trackArea;
                 }
                 
                 // Calculate scroll based on thumb movement
-                int scrollRange = listH - thumbH;
+                int scrollRange = trackArea - thumbH;
                 int newScroll = scrollRange > 0 ? (dy * maxScroll) / scrollRange : 0;
                 newScroll = _scrollStartScroll + newScroll;
                 
@@ -584,16 +605,50 @@ namespace guideXOS.GUI {
             int sbX = listX + listW - sbW;
             Framebuffer.Graphics.FillRectangle(sbX, listY, sbW, listH, 0xFF1A1A1A);
             int total = count * Spacing;
-            if (total > listH) {
-                int thumbH = (listH * listH) / total; if (thumbH < 16) thumbH = 16; if (thumbH > listH) thumbH = listH;
-                int thumbY = (listH * _scroll) / total; if (thumbY + thumbH > listH) thumbY = listH - thumbH;
+
+            // Draw up/down arrow buttons at top and bottom of the scrollbar
+            int arrowUpY = listY;
+            int arrowDnY = listY + listH - ScrollArrowH;
+            int trackTopY = listY + ScrollArrowH;
+            int trackAreaH = listH - ScrollArrowH * 2;
+
+            // Up arrow button
+            bool hoverUp = (mouseX >= sbX && mouseX <= sbX + sbW && mouseY >= arrowUpY && mouseY < arrowUpY + ScrollArrowH);
+            Framebuffer.Graphics.FillRectangle(sbX, arrowUpY, sbW, ScrollArrowH, hoverUp ? 0xFF3A3A3A : 0xFF2A2A2A);
+            Framebuffer.Graphics.DrawRectangle(sbX, arrowUpY, sbW, ScrollArrowH, 0xFF3F3F3F, 1);
+            // Draw up triangle (centered in button)
+            int triCx = sbX + sbW / 2;
+            int triCy = arrowUpY + ScrollArrowH / 2;
+            for (int r = 0; r < 5; r++) {
+                int lx = triCx - r; int rx = triCx + r; int ty = triCy + r - 2;
+                if (ty >= arrowUpY && ty < arrowUpY + ScrollArrowH) {
+                    Framebuffer.Graphics.FillRectangle(lx, ty, rx - lx + 1, 1, 0xFFCCCCCC);
+                }
+            }
+
+            // Down arrow button
+            bool hoverDn = (mouseX >= sbX && mouseX <= sbX + sbW && mouseY >= arrowDnY && mouseY <= arrowDnY + ScrollArrowH);
+            Framebuffer.Graphics.FillRectangle(sbX, arrowDnY, sbW, ScrollArrowH, hoverDn ? 0xFF3A3A3A : 0xFF2A2A2A);
+            Framebuffer.Graphics.DrawRectangle(sbX, arrowDnY, sbW, ScrollArrowH, 0xFF3F3F3F, 1);
+            // Draw down triangle (centered in button)
+            for (int r = 0; r < 5; r++) {
+                int lx = triCx - r; int rx = triCx + r; int ty = arrowDnY + ScrollArrowH / 2 - r + 2;
+                if (ty >= arrowDnY && ty < arrowDnY + ScrollArrowH) {
+                    Framebuffer.Graphics.FillRectangle(lx, ty, rx - lx + 1, 1, 0xFFCCCCCC);
+                }
+            }
+
+            if (total > listH && trackAreaH > 0) {
+                int thumbH = (trackAreaH * listH) / total; if (thumbH < 16) thumbH = 16; if (thumbH > trackAreaH) thumbH = trackAreaH;
+                int maxScroll = total - listH; if (maxScroll < 1) maxScroll = 1;
+                int thumbY = ((trackAreaH - thumbH) * _scroll) / maxScroll; if (thumbY + thumbH > trackAreaH) thumbY = trackAreaH - thumbH;
                 
                 // Highlight scrollbar thumb on hover
                 bool hoverThumb = (mouseX >= sbX && mouseX <= sbX + sbW && 
-                                  mouseY >= listY + thumbY && mouseY <= listY + thumbY + thumbH);
+                                  mouseY >= trackTopY + thumbY && mouseY <= trackTopY + thumbY + thumbH);
                 uint thumbColor = hoverThumb ? 0xFF4F4F4F : 0xFF2F2F2F;
                 
-                Framebuffer.Graphics.FillRectangle(sbX + 2, listY + thumbY, sbW - 4, thumbH, thumbColor);
+                Framebuffer.Graphics.FillRectangle(sbX + 2, trackTopY + thumbY, sbW - 4, thumbH, thumbColor);
             }
 
             // Right column content (with padding and truncation) + hover rows

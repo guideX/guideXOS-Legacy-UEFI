@@ -117,6 +117,11 @@ namespace guideXOS.GUI {
             try {
                 if (Framebuffer.Graphics == null) return;
                 
+                // CRITICAL: Validate dimensions to prevent division/modulus by zero
+                // which causes CPU #DE fault (page fault) that halts all CPUs on bare metal
+                if (width <= 0 || height <= 0 || barHeight < 0) return;
+                if ((height + barHeight) <= 0) return;
+                
                 // Ensure tables are initialized before rendering any effects
                 EnsureTablesInitialized();
 
@@ -170,14 +175,21 @@ namespace guideXOS.GUI {
         private static void RenderDigitize(int x, int y, int width, int height, int barHeight, int progressInt) {
             var g = Framebuffer.Graphics;
             int totalHeight = height + barHeight;
+            if (totalHeight <= 0 || width <= 0) return;
             int scanlineCount = UISettings.DigitizeScanlineCount;
+            if (scanlineCount <= 0) return;
             uint color = UISettings.DigitizeColor;
+            int screenW = Framebuffer.Width;
+            int screenH = Framebuffer.Height;
             
             // Scanlines appear from top to bottom
             int visibleScanlines = (scanlineCount * progressInt) / 1000;
             
             for (int i = 0; i < visibleScanlines; i++) {
                 int scanY = y - barHeight + (i * totalHeight / scanlineCount);
+                
+                // Skip if scanline is off-screen
+                if (scanY < 0 || scanY >= screenH) continue;
                 
                 // Main scanline
                 g.DrawLine(x, scanY, x + width, scanY, color);
@@ -187,16 +199,15 @@ namespace guideXOS.GUI {
                     byte alpha = (byte)(100 * (1000 - (i * 1000 / visibleScanlines)) / 1000);
                     uint glowColor = ((uint)alpha << 24) | (color & 0x00FFFFFF);
                     if (scanY > 0) g.DrawLine(x, scanY - 1, x + width, scanY - 1, glowColor);
-                    if (scanY < Framebuffer.Height - 1) g.DrawLine(x, scanY + 1, x + width, scanY + 1, glowColor);
+                    if (scanY < screenH - 1) g.DrawLine(x, scanY + 1, x + width, scanY + 1, glowColor);
                 }
                 
                 // Random pixel sparkles along the scanline
-                if (width > 0) {
-                    for (int j = 0; j < width / 20; j++) {
-                        int sparkX = x + NextRandom(width);
-                        int sparkSize = 2;
+                for (int j = 0; j < width / 20; j++) {
+                    int sparkX = x + NextRandom(width);
+                    int sparkSize = 2;
+                    if (sparkX >= 0 && sparkX < screenW && scanY - 1 >= 0)
                         g.FillRectangle(sparkX, scanY - 1, sparkSize, sparkSize + 1, color);
-                    }
                 }
             }
             
@@ -218,11 +229,13 @@ namespace guideXOS.GUI {
         private static void RenderDerezz(int x, int y, int width, int height, int barHeight, int progressInt) {
             var g = Framebuffer.Graphics;
             int totalHeight = height + barHeight;
+            if (totalHeight <= 0 || width <= 0) return;
             uint color = UISettings.DerezzColor;
+            int screenW = Framebuffer.Width;
+            int screenH = Framebuffer.Height;
             
             // Grid of breaking pixels
             int gridSize = 8;
-            if (gridSize == 0) return;
             int gridW = width / gridSize;
             int gridH = totalHeight / gridSize;
             
@@ -236,15 +249,18 @@ namespace guideXOS.GUI {
                     int cellY = (y - barHeight) + (gy * gridSize);
                     
                     if (cellProgressInt > 300) {
-                        // Draw breaking cell outline
-                        byte alpha = (byte)(((1000 - cellProgressInt) * 255) / 1000);
-                        uint cellColor = ((uint)alpha << 24) | (color & 0x00FFFFFF);
-                        g.DrawRectangle(cellX, cellY, gridSize, gridSize, cellColor, 1);
+                        // Draw breaking cell outline - skip if off-screen
+                        if (cellX >= -gridSize && cellX < screenW && cellY >= -gridSize && cellY < screenH) {
+                            byte alpha = (byte)(((1000 - cellProgressInt) * 255) / 1000);
+                            uint cellColor = ((uint)alpha << 24) | (color & 0x00FFFFFF);
+                            g.DrawRectangle(cellX, cellY, gridSize, gridSize, cellColor, 1);
                         
-                        // Add falling effect
-                        if (cellProgressInt > 600) {
-                            int fallDist = ((cellProgressInt - 600) * 20) / 1000;
-                            g.DrawRectangle(cellX, cellY + fallDist, gridSize, gridSize, cellColor, 1);
+                            // Add falling effect
+                            if (cellProgressInt > 600) {
+                                int fallDist = ((cellProgressInt - 600) * 20) / 1000;
+                                if (cellY + fallDist < screenH)
+                                    g.DrawRectangle(cellX, cellY + fallDist, gridSize, gridSize, cellColor, 1);
+                            }
                         }
                     }
                 }
@@ -262,7 +278,10 @@ namespace guideXOS.GUI {
         private static void RenderBurnIn(int x, int y, int width, int height, int barHeight, int progressInt) {
             var g = Framebuffer.Graphics;
             int particleCount = UISettings.BurnParticleCount;
+            if (particleCount <= 0) return;
             uint color = UISettings.BurnColor;
+            int screenW = Framebuffer.Width;
+            int screenH = Framebuffer.Height;
             
             int centerX = x + width / 2;
             int centerY = y - barHeight + (height + barHeight) / 2;
@@ -279,6 +298,9 @@ namespace guideXOS.GUI {
                 int px = centerX + (currentRadius * FastCos(angleDeg)) / 1000;
                 int py = centerY + (currentRadius * FastSin(angleDeg)) / 1000;
                 
+                // Skip particles that are off-screen
+                if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
+                
                 // Color intensity based on progress
                 byte alpha = (byte)((progressInt * 255) / 1000);
                 uint pColor = ((uint)alpha << 24) | (color & 0x00FFFFFF);
@@ -292,8 +314,10 @@ namespace guideXOS.GUI {
                     int trailRadius = currentRadius + 10;
                     int trailX = centerX + (trailRadius * FastCos(angleDeg)) / 1000;
                     int trailY = centerY + (trailRadius * FastSin(angleDeg)) / 1000;
-                    uint trailColor = ((uint)(alpha / 2) << 24) | (color & 0x00FFFFFF);
-                    g.FillRectangle(trailX, trailY, 2, 2, trailColor);
+                    if (trailX >= 0 && trailX < screenW && trailY >= 0 && trailY < screenH) {
+                        uint trailColor = ((uint)(alpha / 2) << 24) | (color & 0x00FFFFFF);
+                        g.FillRectangle(trailX, trailY, 2, 2, trailColor);
+                    }
                 }
             }
             
@@ -309,7 +333,10 @@ namespace guideXOS.GUI {
         private static void RenderBurnOut(int x, int y, int width, int height, int barHeight, int progressInt) {
             var g = Framebuffer.Graphics;
             int particleCount = UISettings.BurnParticleCount;
+            if (particleCount <= 0) return;
             uint color = UISettings.BurnColor;
+            int screenW = Framebuffer.Width;
+            int screenH = Framebuffer.Height;
             
             int centerX = x + width / 2;
             int centerY = y - barHeight + (height + barHeight) / 2;
@@ -323,6 +350,9 @@ namespace guideXOS.GUI {
                 
                 int px = centerX + (currentRadius * FastCos(angleDeg)) / 1000;
                 int py = centerY + (currentRadius * FastSin(angleDeg)) / 1000;
+                
+                // Skip particles that are off-screen to prevent out-of-bounds access
+                if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
                 
                 // Fade out as they travel
                 byte alpha = (byte)(((1000 - progressInt) * 255) / 1000);
@@ -339,7 +369,10 @@ namespace guideXOS.GUI {
         private static void RenderSmokeIn(int x, int y, int width, int height, int barHeight, int progressInt) {
             var g = Framebuffer.Graphics;
             int particleCount = UISettings.SmokeParticleCount;
+            if (particleCount <= 0) return;
             uint color = UISettings.SmokeColor;
+            int screenW = Framebuffer.Width;
+            int screenH = Framebuffer.Height;
             
             int totalHeight = height + barHeight;
             if (width <= 0 || totalHeight <= 0) return; // Prevent division by zero
@@ -356,6 +389,9 @@ namespace guideXOS.GUI {
                 // Move toward final position
                 int px = x + posX + (driftX * (1000 - progressInt) / 1000);
                 int py = (y - barHeight) + posY + (driftY * (1000 - progressInt) / 1000);
+                
+                // Skip particles that are off-screen
+                if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
                 
                 byte alpha = (byte)((progressInt * 100) / 1000);
                 uint pColor = ((uint)alpha << 24) | (color & 0x00FFFFFF);
@@ -376,17 +412,26 @@ namespace guideXOS.GUI {
         private static void RenderSmokeOut(int x, int y, int width, int height, int barHeight, int progressInt) {
             var g = Framebuffer.Graphics;
             int particleCount = UISettings.SmokeParticleCount;
+            if (particleCount <= 0) return;
             uint color = UISettings.SmokeColor;
+            int screenW = Framebuffer.Width;
+            int screenH = Framebuffer.Height;
+            
+            int totalHeight = height + barHeight;
+            if (width <= 0 || totalHeight <= 0) return; // Prevent modulus by zero (CPU #DE fault)
             
             for (int i = 0; i < particleCount; i++) {
                 int posX = (i * 37) % width;
-                int posY = (i * 53) % (height + barHeight);
+                int posY = (i * 53) % totalHeight;
                 
                 int driftX = ((i * 11) % 40) - 20;
                 int driftY = -((i * 7) % 30);
                 
                 int px = x + posX + (driftX * progressInt / 1000);
                 int py = (y - barHeight) + posY + (driftY * progressInt / 1000);
+                
+                // Skip particles that are off-screen
+                if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
                 
                 byte alpha = (byte)(((1000 - progressInt) * 100) / 1000);
                 uint pColor = ((uint)alpha << 24) | (color & 0x00FFFFFF);
@@ -408,15 +453,23 @@ namespace guideXOS.GUI {
             var g = Framebuffer.Graphics;
             uint color = UISettings.GlitchColor;
             int intensity = UISettings.GlitchIntensity;
+            if (intensity <= 0) intensity = 1; // Prevent modulus by zero
+            int screenH = Framebuffer.Height;
+            
+            int totalHeight = height + barHeight;
+            if (totalHeight <= 0 || width <= 0) return; // Prevent modulus by zero
             
             // More glitches at start and end
             int glitchAmount = 1000 - (IntAbs(progressInt - 500) * 2);
             int glitchCount = (glitchAmount * 15) / 1000;
             
             for (int i = 0; i < glitchCount; i++) {
-                int glitchY = (y - barHeight) + ((i * 71) % (height + barHeight));
+                int glitchY = (y - barHeight) + ((i * 71) % totalHeight);
                 int glitchH = 2 + ((i * 13) % 8);
                 int offset = ((i % 2) == 0 ? 1 : -1) * ((i * 7) % intensity);
+                
+                // Skip if off-screen
+                if (glitchY < 0 || glitchY >= screenH) continue;
                 
                 // Draw displaced scanline
                 byte alpha = (byte)((glitchAmount * 180) / 1000);
@@ -447,6 +500,7 @@ namespace guideXOS.GUI {
         private static void RenderRipple(int x, int y, int width, int height, int barHeight, int progressInt) {
             var g = Framebuffer.Graphics;
             int waveCount = UISettings.RippleWaveCount;
+            if (waveCount <= 0) return;
             uint color = UISettings.RippleColor;
             
             int centerX = x + width / 2;
@@ -454,6 +508,7 @@ namespace guideXOS.GUI {
             
             // Calculate max radius using integer square root
             int totalH = height + barHeight;
+            if (totalH <= 0 || width <= 0) return;
             int maxRadius = IntSqrt(width * width + totalH * totalH) / 2;
             
             for (int i = 0; i < waveCount; i++) {
@@ -498,7 +553,10 @@ namespace guideXOS.GUI {
         private static void RenderExplode(int x, int y, int width, int height, int barHeight, int progressInt) {
             var g = Framebuffer.Graphics;
             int particleCount = UISettings.ExplodeParticleCount;
+            if (particleCount <= 0) return;
             uint color = UISettings.ExplodeColor;
+            int screenW = Framebuffer.Width;
+            int screenH = Framebuffer.Height;
             
             int centerX = x + width / 2;
             int centerY = y - barHeight + (height + barHeight) / 2;
@@ -511,6 +569,9 @@ namespace guideXOS.GUI {
                 int px = centerX + (dist * FastCos(angleDeg)) / 1000;
                 int py = centerY + (dist * FastSin(angleDeg)) / 1000;
                 
+                // Skip particles that are off-screen
+                if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
+                
                 byte alpha = (byte)(((1000 - progressInt) * 255) / 1000);
                 uint pColor = ((uint)alpha << 24) | (color & 0x00FFFFFF);
                 
@@ -522,8 +583,10 @@ namespace guideXOS.GUI {
                     int trailDist = dist - 10;
                     int trailX = centerX + (trailDist * FastCos(angleDeg)) / 1000;
                     int trailY = centerY + (trailDist * FastSin(angleDeg)) / 1000;
-                    uint trailColor = ((uint)(alpha / 2) << 24) | (color & 0x00FFFFFF);
-                    g.FillRectangle(trailX, trailY, 2, 2, trailColor);
+                    if (trailX >= 0 && trailX < screenW && trailY >= 0 && trailY < screenH) {
+                        uint trailColor = ((uint)(alpha / 2) << 24) | (color & 0x00FFFFFF);
+                        g.FillRectangle(trailX, trailY, 2, 2, trailColor);
+                    }
                 }
             }
         }
@@ -534,7 +597,10 @@ namespace guideXOS.GUI {
         private static void RenderImplode(int x, int y, int width, int height, int barHeight, int progressInt) {
             var g = Framebuffer.Graphics;
             int particleCount = UISettings.ExplodeParticleCount;
+            if (particleCount <= 0) return;
             uint color = UISettings.ExplodeColor;
+            int screenW = Framebuffer.Width;
+            int screenH = Framebuffer.Height;
             
             int centerX = x + width / 2;
             int centerY = y - barHeight + (height + barHeight) / 2;
@@ -546,6 +612,9 @@ namespace guideXOS.GUI {
                 int dist = (speed * (1000 - progressInt)) / 1000;
                 int px = centerX + (dist * FastCos(angleDeg)) / 1000;
                 int py = centerY + (dist * FastSin(angleDeg)) / 1000;
+                
+                // Skip particles that are off-screen
+                if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
                 
                 byte alpha = (byte)((progressInt * 255) / 1000);
                 uint pColor = ((uint)alpha << 24) | (color & 0x00FFFFFF);

@@ -81,17 +81,17 @@ namespace guideXOS.OS {
         /// </summary>
         private void LoadDefaultApps() {
             _apps.Add(new App("Calculator", Icons.CalculatorIcon(32)));
-            _apps.Add(new App("ComputerFiles", Icons.FolderIcon(32)));
+            _apps.Add(new App("Computer Files", Icons.FolderIcon(32)));
             _apps.Add(new App("Console", Icons.EditIcon(32)));
             _apps.Add(new App("Devices", Icons.ConfigureIcon(32)));
-            _apps.Add(new App("DiskManager", Icons.DocumentIcon(32)));
-            _apps.Add(new App("DisplayOptions", Icons.ConfigureIcon(32)));
+            _apps.Add(new App("Disk Manager", Icons.DocumentIcon(32)));
+            _apps.Add(new App("Display Options", Icons.ConfigureIcon(32)));
             _apps.Add(new App("Firewall", Icons.ConfigureIcon(32)));
             _apps.Add(new App("Notepad", Icons.NotepadIcon(32)));
             _apps.Add(new App("Paint", Icons.ImageIcon(32)));
-            _apps.Add(new App("TaskManager", Icons.ApplicationsIcon(32)));
-            _apps.Add(new App("ImageViewer", Icons.ImageIcon(32)));
-            _apps.Add(new App("WAVPlayer", Icons.AudioIcon(32)));
+            _apps.Add(new App("Task Manager", Icons.ApplicationsIcon(32)));
+            _apps.Add(new App("Image Viewer", Icons.ImageIcon(32)));
+            _apps.Add(new App("WAV Player", Icons.AudioIcon(32)));
             //_apps.Add(new App("Clock", Icons.CalendarIcon(32)));
             //_apps.Add(new App("Monitor", Icons.DocumentIcon(32)));
             //_apps.Add(new App("Lock", Icons.LockIcon(32)));
@@ -125,15 +125,15 @@ namespace guideXOS.OS {
                         case "Console": 
                             if (Program.FConsole == null) Program.FConsole = new FConsole(160, 120); 
                             _apps[i].AppObject = Program.FConsole; b = true; break;
-                        case "TaskManager": _apps[i].AppObject = new TaskManager(500, 500); b = true; break;
+                        case "Task Manager": _apps[i].AppObject = new TaskManager(500, 500); b = true; break;
                         case "nexIRC": _apps[i].AppObject = new nexIRC(260, 220); b = true; break;
-                        case "IRCNetworks": _apps[i].AppObject = new IRCNetworks(300, 240); b = true; break;
-                        case "GUISamples": _apps[i].AppObject = new GUISamples(220, 260); b = true; break;
-                        case "ComputerFiles": _apps[i].AppObject = new ComputerFiles(300, 200); b = true; break;
-                        case "DiskManager": _apps[i].AppObject = new DiskManager(400, 300); b = true; break;
-                        case "DisplayOptions": _apps[i].AppObject = new DisplayOptions(200, 150, 800, 600); b = true; break;
+                        case "IRC Networks": _apps[i].AppObject = new IRCNetworks(300, 240); b = true; break;
+                        case "GUI Samples": _apps[i].AppObject = new GUISamples(220, 260); b = true; break;
+                        case "Computer Files": _apps[i].AppObject = new ComputerFiles(300, 200); b = true; break;
+                        case "Disk Manager": _apps[i].AppObject = new DiskManager(400, 300); b = true; break;
+                        case "Display Options": _apps[i].AppObject = new DisplayOptions(200, 150, 800, 600); b = true; break;
                         case "Firewall": _apps[i].AppObject = new FirewallWindow(300, 200); b = true; break;
-                        case "ImageViewer": 
+                        case "Image Viewer": 
                             if (Desktop.imageViewer != null) {
                                 Desktop.imageViewer.Visible = true;
                                 WindowManager.MoveToEnd(Desktop.imageViewer);
@@ -141,8 +141,8 @@ namespace guideXOS.OS {
                                 b = true;
                             }
                             break;
-                        case "OnScreenKeyboard": _apps[i].AppObject = new OnScreenKeyboard(300, 100); b = true; break;
-                        case "WAVPlayer": 
+                        case "On Screen Keyboard": _apps[i].AppObject = new OnScreenKeyboard(300, 100); b = true; break;
+                        case "WAV Player": 
                             if (Desktop.wavplayer != null) {
                                 Desktop.wavplayer.Visible = true;
                                 WindowManager.MoveToEnd(Desktop.wavplayer);
@@ -150,7 +150,7 @@ namespace guideXOS.OS {
                                 b = true;
                             }
                             break;
-                        case "WebBrowser": _apps[i].AppObject = new WebBrowser(200, 150); b = true; break;
+                        case "Web Browser": _apps[i].AppObject = new WebBrowser(200, 150); b = true; break;
                         case "Welcome": _apps[i].AppObject = new Welcome(300, 200); b = true; break;
                         // GXM apps
                         case "Hello Demo":

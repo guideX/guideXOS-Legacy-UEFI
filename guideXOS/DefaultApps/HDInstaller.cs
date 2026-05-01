@@ -52,6 +52,10 @@ namespace guideXOS.DefaultApps {
         private bool _didCopyFiles;
         private bool _didBootloader;
 
+        // Ramdisk context references for CopyBootFiles
+        private guideXOS.FS.Disk _ramdiskDisk;
+        private guideXOS.FS.FileSystem _ramdiskFile;
+
         // UI Layout constants
         private const int Pad = 20;
         private const int BtnW = 120;
@@ -1006,6 +1010,10 @@ namespace guideXOS.DefaultApps {
                     // Step 1: Copy boot files to boot partition (FAT32)
                     _statusMessage = "Copying boot files...";
                     
+                    // Save ramdisk references so CopyBootFiles can switch contexts
+                    _ramdiskDisk = originalDisk;
+                    _ramdiskFile = originalFile;
+                    
                     // Switch to boot partition
                     guideXOS.FS.Disk.Instance = targetDisk;
                     var bootFS = new guideXOS.FS.FAT();
@@ -1080,21 +1088,33 @@ namespace guideXOS.DefaultApps {
         }
         
         private void CopyBootFiles() {
-            // Copy essential boot files to boot partition
+            // Copy essential boot files from ramdisk to boot partition
+            // Called while File.Instance is set to the boot partition's FAT
             try {
-                var originalDisk = guideXOS.FS.Disk.Instance;
-                var originalFile = guideXOS.FS.File.Instance;
+                // Save current (boot partition) context
+                var bootDisk = guideXOS.FS.Disk.Instance;
+                var bootFile = guideXOS.FS.File.Instance;
+                
+                // We need the ramdisk context to read source files
+                // The caller (CopySystemFiles) saved originalDisk/originalFile before switching,
+                // so we cache the boot FS ref and swap contexts as needed.
+                var savedDisk = _ramdiskDisk;
+                var savedFile = _ramdiskFile;
                 
                 try {
-                    // Switch back to ramdisk to read kernel
-                    guideXOS.FS.Disk.Instance = originalDisk;
-                    guideXOS.FS.File.Instance = originalFile;
+                    // Switch to ramdisk to read kernel
+                    guideXOS.FS.Disk.Instance = savedDisk;
+                    guideXOS.FS.File.Instance = savedFile;
                     
-                    // Read kernel binary
+                    // Read kernel binary from ramdisk
                     byte[] kernelData = null;
                     if (guideXOS.FS.File.Exists("/boot/kernel.bin")) {
                         kernelData = guideXOS.FS.File.ReadAllBytes("/boot/kernel.bin");
                     }
+                    
+                    // Switch to boot partition for writing
+                    guideXOS.FS.Disk.Instance = bootDisk;
+                    guideXOS.FS.File.Instance = bootFile;
                     
                     // Create boot directory structure
                     EnsureDirectoryExists("/boot");
@@ -1130,8 +1150,9 @@ namespace guideXOS.DefaultApps {
                     guideXOS.FS.File.WriteAllBytes("/boot/grub/grub.cfg", GetAsciiBytes(grubCfg));
                     
                 } finally {
-                    guideXOS.FS.Disk.Instance = originalDisk;
-                    guideXOS.FS.File.Instance = originalFile;
+                    // Restore boot partition context (caller expects this)
+                    guideXOS.FS.Disk.Instance = bootDisk;
+                    guideXOS.FS.File.Instance = bootFile;
                 }
             } catch {
                 // Ignore errors - some files may not exist
@@ -1168,14 +1189,14 @@ namespace guideXOS.DefaultApps {
         }
         
         private void EnsureDirectoryExists(string path) {
-            // Simple directory creation - may not work depending on filesystem implementation
+            if (string.IsNullOrEmpty(path) || path == "/") return;
             try {
-                if (!guideXOS.FS.File.Exists(path)) {
-                    // Try to create directory - this may not be implemented in all filesystems
-                    // For now, we'll just skip it
+                // Use FAT.CreateDirectory if the current filesystem is FAT
+                if (guideXOS.FS.File.Instance is guideXOS.FS.FAT fatFs) {
+                    fatFs.CreateDirectory(path);
                 }
             } catch {
-                // Ignore
+                // Ignore - directory may already exist or FS doesn't support it
             }
         }
         

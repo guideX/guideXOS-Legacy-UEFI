@@ -11,7 +11,7 @@ namespace guideXOS.GUI {
         private bool _clockUse12Hour = false;
         private bool _clockClickLatch = false;
         private bool _startClickLatch = false;
-
+        
         // Taskbar auto-hide and slide animation
         private bool _taskbarHidden = false;
         private int _taskbarOffset = 0; // pixels hidden (0 = fully visible, _barHeight = fully hidden)
@@ -20,7 +20,7 @@ namespace guideXOS.GUI {
         private int _animationStartOffset = 0;
         private int _animationTargetOffset = 0;
         private ulong _animationStartTick = 0;
-
+        
         // Right-click context menu
         private TaskbarMenu _menu;
         private bool _rightClickLatch = false;
@@ -37,7 +37,7 @@ namespace guideXOS.GUI {
         private ulong _nextCycleStart;
         private const ulong TenSeconds = 10_000;       // ms
         private const ulong FiveMinutes = 300_000;     // ms
-
+        
         // Track actual network activity for animation
         private ulong _lastNetActivity = 0;
         private const ulong NetActivityWindow = 3_000; // show animation for 3 seconds after activity
@@ -45,7 +45,7 @@ namespace guideXOS.GUI {
         // New: latches and references for Workspace Switcher and Show Desktop
         private bool _taskViewLatch = false;
         private bool _showDesktopLatch = false;
-
+        
         // DON'T use singleton - let it be created fresh but DELAY the creation
         private bool _needsWorkspaceSwitcher = false;
         private WorkspaceSwitcher _workspaceSwitcher; // Add field for the switcher instance
@@ -59,7 +59,7 @@ namespace guideXOS.GUI {
 
         // Latch for pinned quicklaunch
         private bool _pinnedClickLatch = false;
-
+        
         // On-Screen Keyboard button latch
         private bool _oskClickLatch = false;
 
@@ -70,9 +70,9 @@ namespace guideXOS.GUI {
         private int _lastMinute = -1;
         private int _lastDay = -1;
 
-        public Taskbar(int barHeight, Image startIcon) {
-            _barHeight = barHeight;
-            _startIcon = startIcon;
+        public Taskbar(int barHeight, Image startIcon) { 
+            _barHeight = barHeight; 
+            _startIcon = startIcon; 
             // schedule: show animation for first 10 seconds after boot
             _bootTicks = Timer.Ticks;
             _animWindowStart = _bootTicks;
@@ -627,40 +627,40 @@ namespace guideXOS.GUI {
                     return;
                 }
             }
-
+            
             // Create new OSK window at bottom center of screen
             int oskW = 800;
             int oskH = 280;
             int oskX = (Framebuffer.Width - oskW) / 2;
             int oskY = Framebuffer.Height - _barHeight - oskH - 10;
-
+            
             var keyboard = new OnScreenKeyboard(oskX, oskY);
             WindowManager.MoveToEnd(keyboard);
             keyboard.Visible = true;
         }
-
+        
         private void StartAnimation(int fromOffset, int toOffset) {
             // Check if animations are disabled
-            bool canSlide = (toOffset == 0 && UISettings.EnableTaskbarSlideDown) ||
+            bool canSlide = (toOffset == 0 && UISettings.EnableTaskbarSlideDown) || 
                            (toOffset > 0 && UISettings.EnableTaskbarSlideUp);
-
+            
             if (!canSlide) {
                 // Instant change without animation
                 _taskbarOffset = toOffset;
                 return;
             }
-
+            
             _isAnimating = true;
             _animationStartOffset = fromOffset;
             _animationTargetOffset = toOffset;
             _animationStartTick = Timer.Ticks;
         }
-
+        
         private void UpdateAnimation() {
             if (!_isAnimating) return;
-
+            
             ulong elapsed = Timer.Ticks >= _animationStartTick ? Timer.Ticks - _animationStartTick : 0;
-
+            
             if (elapsed >= (ulong)UISettings.TaskbarSlideDurationMs) {
                 // Animation complete
                 _taskbarOffset = _animationTargetOffset;
@@ -670,7 +670,7 @@ namespace guideXOS.GUI {
                 float t = (float)elapsed / UISettings.TaskbarSlideDurationMs;
                 // Ease out cubic for smooth deceleration
                 t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
-
+                
                 int delta = _animationTargetOffset - _animationStartOffset;
                 _taskbarOffset = _animationStartOffset + (int)(delta * t);
             }
