@@ -55,7 +55,12 @@ public static class BootConsole {
     /// </summary>
     /// <param name="str"></param>
     public static void Write(char str) {
-        WriteLine(str.ToString(), false);
+        if (BootConsole.CurrentConsoleMode == BootConsoleMode.None) return;
+        if (BootConsole.CurrentMode == BootMode.Legacy) {
+            guideXOS.Console.Write(str);
+            return;
+        }
+        WriteSerialChar(str);
     }
     /// <summary>
     /// Write
@@ -64,15 +69,18 @@ public static class BootConsole {
     public static void WriteLine(string str, bool newLine = true) {
         if (BootConsole.CurrentConsoleMode == BootConsoleMode.None) return;
         if (BootConsole.CurrentMode == BootMode.Legacy) {
-            BootConsole.WriteLine(str);
+            if (newLine) {
+                guideXOS.Console.WriteLine(str);
+            } else {
+                guideXOS.Console.Write(str);
+            }
             return;
         }
-        var chars = ConvertStringToCharArray(str);
-        for (int i = 0; i < chars.Length; i++) {
-            while ((Native.In8(0x3FD) & 0x20) == 0) { }
-            Native.Out8(0x3F8, (byte)chars[i]);
+        if (str != null) {
+            for (int i = 0; i < str.Length; i++) {
+                WriteSerialChar(str[i]);
+            }
         }
-        Allocator.Free(chars);
         if (newLine) 
             NewLine();
     }
@@ -80,22 +88,12 @@ public static class BootConsole {
     /// New Line
     /// </summary>
     public static void NewLine() {
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'\r');
-        while ((Native.In8(0x3FD) & 0x20) == 0) { }
-        Native.Out8(0x3F8, (byte)'\n');
+        WriteSerialChar('\r');
+        WriteSerialChar('\n');
     }
-    /// <summary>
-    /// Convert String to Char Array
-    /// </summary>
-    /// <param name="input"></param>
-    /// <returns></returns>
-    public static char[] ConvertStringToCharArray(string input) {
-        if (string.IsNullOrEmpty(input)) return Array.Empty<char>();
-        char[] charArray = new char[input.Length]; // Allocate the array with the exact length of the string.
-        for (int i = 0; i < input.Length; i++) { // Manually iterate through the string and assign characters to the array.
-            charArray[i] = input[i];
-        }
-        return charArray;
+
+    private static void WriteSerialChar(char value) {
+        while ((Native.In8(0x3FD) & 0x20) == 0) { }
+        Native.Out8(0x3F8, (byte)(value & 0xFF));
     }
 }

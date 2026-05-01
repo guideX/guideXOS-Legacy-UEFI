@@ -471,7 +471,7 @@ namespace guideXOS.GUI {
             ComputeButtonRects();
             int mx = Control.MousePosition.X; int my = Control.MousePosition.Y;
             _hoverBtn = HitTestButtons(mx, my);
-            bool left = Control.MouseButtons.HasFlag(MouseButtons.Left);
+            bool left = (Control.MouseButtons & MouseButtons.Left) == MouseButtons.Left;
 
             // Title buttons interaction
             if (left) {
@@ -486,13 +486,13 @@ namespace guideXOS.GUI {
             // Block other input when tombstoned
             if (IsTombstoned) return;
 
-            // Drag title bar
-            if (left) {
+            // Drag title bar (skip when capturing title button clicks to prevent drag interference)
+            if (left && !_captureButtons) {
                 if (!WindowManager.HasWindowMoving && !Move && mx > X && mx < X + Width && my > Y - BarHeight && my < Y) {
                     WindowManager.MoveToEnd(this);
                     Move = true; WindowManager.HasWindowMoving = true; OffsetX = mx - X; OffsetY = my - Y;
                 }
-            } else { Move = false; WindowManager.HasWindowMoving = false; }
+            } else if (!left) { Move = false; WindowManager.HasWindowMoving = false; }
 
             if (Move) {
                 X = mx - OffsetX; Y = my - OffsetY; ClampToScreen(); _normX = X; _normY = Y; _normW = Width; _normH = Height;

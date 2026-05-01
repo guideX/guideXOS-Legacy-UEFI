@@ -1,7 +1,9 @@
 ﻿using guideXOS.FS;
+using guideXOS.FS;
 using guideXOS.GUI;
 using guideXOS.Kernel.Drivers;
 using System;
+using System.Collections.Generic;
 using System.Windows.Forms;
 namespace guideXOS.DefaultApps {
     /// <summary>
@@ -15,17 +17,28 @@ namespace guideXOS.DefaultApps {
         private int _btnWSaveAs = 88;
         private int _btnWSave = 72;
         private int _btnWWrap = 64;
+        private int _btnWOpen = 72;
+        private int _btnWUndo = 64;
+        private int _btnWRedo = 64;
         private string _fileName = "notes.txt";
         private string _savedPath;
         private bool _dirty;
         private bool _wrap = true;
         private SaveDialog _dlg;
+        private OpenDialog _openDlg;
         private SaveChangesDialog _confirmDlg;
         private byte _lastScan; private bool _keyDown;
         // Status bar
         private int _statusH = 26;
         // Track up to two currently pressed make scan codes (0 = none)
         private byte _k1; private byte _k2;
+        // Cursor blink
+        private ulong _cursorTick;
+        private bool _cursorVisible = true;
+        // Undo / Redo stacks (store text snapshots)
+        private List<string> _undoStack;
+        private List<string> _redoStack;
+        private const int _maxUndo = 64;
 
         public Notepad(int x, int y) : base(x, y, 700, 460) {
             IsResizable = true;
@@ -35,8 +48,10 @@ namespace guideXOS.DefaultApps {
             ShowTombstone = true;
             ShowInStartMenu = true;
             Title = "Notepad";
-            _text = string.Empty; _clickLock = false; _savedPath = null; _dirty = false; _dlg = null; _confirmDlg = null;
+            _text = string.Empty; _clickLock = false; _savedPath = null; _dirty = false; _dlg = null; _openDlg = null; _confirmDlg = null;
             _k1 = 0; _k2 = 0;
+            _cursorTick = 0; _cursorVisible = true;
+            _undoStack = new List<string>(); _redoStack = new List<string>();
             // subscribe keyboard handler
             Keyboard.OnKeyChanged += Keyboard_OnKeyChanged;
         }
@@ -139,19 +154,19 @@ namespace guideXOS.DefaultApps {
                 //Desktop.msgbox.Visible = true;
             }
 
-            if ((_dlg != null && _dlg.Visible) || (_confirmDlg != null && _confirmDlg.Visible)) return; // let dialog handle keys when visible
+            if ((_dlg != null && _dlg.Visible) || (_openDlg != null && _openDlg.Visible) || (_confirmDlg != null && _confirmDlg.Visible)) return; // let dialog handle keys when visible
             if (key.KeyState != ConsoleKeyState.Pressed) { _keyDown = false; _lastScan = 0; return; }
             if (_keyDown && Keyboard.KeyInfo.ScanCode == _lastScan) return; // de-bounce to avoid repeats
             _keyDown = true; _lastScan = (byte)Keyboard.KeyInfo.ScanCode;
 
             // Controls
             if (key.Key == ConsoleKey.Escape) { return; }
-            if (key.Key == ConsoleKey.Backspace) { if (_text.Length > 0) { _text = _text.Substring(0, _text.Length - 1); _dirty = true; } return; }
-            if (key.Key == ConsoleKey.Enter) { _text += "\n"; _dirty = true; return; }
-            if (key.Key == ConsoleKey.Tab) { _text += "    "; _dirty = true; return; }
+            if (key.Key == ConsoleKey.Backspace) { if (_text.Length > 0) { PushUndo(); _text = _text.Substring(0, _text.Length - 1); _dirty = true; } return; }
+            if (key.Key == ConsoleKey.Enter) { PushUndo(); _text += "\n"; _dirty = true; return; }
+            if (key.Key == ConsoleKey.Tab) { PushUndo(); _text += "    "; _dirty = true; return; }
 
             char ch = MapFromKey(key);
-            if (ch != '\0') { _text += ch; _dirty = true; }
+            if (ch != '\0') { PushUndo(); _text += ch; _dirty = true; }
         }
 
         private void SaveTo(string path) {
@@ -172,24 +187,61 @@ namespace guideXOS.DefaultApps {
             WindowManager.MoveToEnd(_dlg); _dlg.Visible = true;
         }
 
+        private void OpenOpenDialog() {
+            _openDlg = new OpenDialog(X + 40, Y + 40, 520, 360, Desktop.Dir, (p) => { OpenFile(p); });
+            WindowManager.MoveToEnd(_openDlg); _openDlg.Visible = true;
+        }
+
+        private void PushUndo() {
+            if (_undoStack.Count >= _maxUndo) _undoStack.RemoveAt(0);
+            _undoStack.Add(_text);
+            _redoStack.Clear();
+        }
+
+        private void PerformUndo() {
+            if (_undoStack.Count == 0) return;
+            _redoStack.Add(_text);
+            _text = _undoStack[_undoStack.Count - 1];
+            _undoStack.RemoveAt(_undoStack.Count - 1);
+            _dirty = true;
+        }
+
+        private void PerformRedo() {
+            if (_redoStack.Count == 0) return;
+            _undoStack.Add(_text);
+            _text = _redoStack[_redoStack.Count - 1];
+            _redoStack.RemoveAt(_redoStack.Count - 1);
+            _dirty = true;
+        }
+
         private static bool StartsWithFast(string s, string pref) { int l = pref.Length; if (s == null || s.Length < l) return false; for (int i = 0; i < l; i++) if (s[i] != pref[i]) return false; return true; }
         public void OpenFile(string path) {
             if (string.IsNullOrEmpty(path)) return; string p = path; if (!StartsWithFast(p, "/") && !string.IsNullOrEmpty(Desktop.Dir)) p = Desktop.Dir + p; byte[] data = File.ReadAllBytes(p);
             if (data != null) { char[] chars = new char[data.Length]; for (int i = 0; i < data.Length; i++) { byte b = data[i]; chars[i] = b >= 32 && b < 127 ? (char)b : (b == 10 ? '\n' : '.'); } _text = new string(chars); data.Dispose(); _savedPath = p; _fileName = p.Substring(p.LastIndexOf('/') + 1); _dirty = false; Title = "Notepad - " + _fileName; RecentManager.AddDocument(p, Icons.DocumentIcon(32)); } else { _text = string.Empty; _savedPath = p; _fileName = p.Substring(p.LastIndexOf('/') + 1); _dirty = false; Title = "Notepad - " + _fileName; }
+            _undoStack.Clear(); _redoStack.Clear();
         }
 
         public override void OnInput() {
-            base.OnInput(); if ((_dlg != null && _dlg.Visible) || (_confirmDlg != null && _confirmDlg.Visible)) return;
+            base.OnInput(); if ((_dlg != null && _dlg.Visible) || (_openDlg != null && _openDlg.Visible) || (_confirmDlg != null && _confirmDlg.Visible)) return;
             bool left = Control.MouseButtons.HasFlag(MouseButtons.Left);
             int mx = Control.MousePosition.X; int my = Control.MousePosition.Y;
             int bxSaveAs = X + _padding; int by = Y + _padding;
-            int bxSave = bxSaveAs + _btnWSaveAs + 8; int bxWrap = bxSave + _btnWSave + 8;
+            int bxSave = bxSaveAs + _btnWSaveAs + 8;
+            int bxOpen = bxSave + _btnWSave + 8;
+            int bxWrap = bxOpen + _btnWOpen + 8;
+            int bxUndo = bxWrap + _btnWWrap + 8;
+            int bxRedo = bxUndo + _btnWUndo + 8;
             bool canSave = !string.IsNullOrEmpty(_savedPath) && _dirty;
+            bool canUndo = _undoStack.Count > 0;
+            bool canRedo = _redoStack.Count > 0;
             if (left) {
                 if (!_clickLock) {
                     if (mx >= bxSaveAs && mx <= bxSaveAs + _btnWSaveAs && my >= by && my <= by + _btnH) { OpenSaveAs(); _clickLock = true; return; }
                     if (canSave && mx >= bxSave && mx <= bxSave + _btnWSave && my >= by && my <= by + _btnH) { SaveTo(_savedPath); _clickLock = true; return; }
+                    if (mx >= bxOpen && mx <= bxOpen + _btnWOpen && my >= by && my <= by + _btnH) { OpenOpenDialog(); _clickLock = true; return; }
                     if (mx >= bxWrap && mx <= bxWrap + _btnWWrap && my >= by && my <= by + _btnH) { _wrap = !_wrap; _clickLock = true; return; }
+                    if (canUndo && mx >= bxUndo && mx <= bxUndo + _btnWUndo && my >= by && my <= by + _btnH) { PerformUndo(); _clickLock = true; return; }
+                    if (canRedo && mx >= bxRedo && mx <= bxRedo + _btnWRedo && my >= by && my <= by + _btnH) { PerformRedo(); _clickLock = true; return; }
                 }
             } else { _clickLock = false; }
         }
@@ -197,24 +249,63 @@ namespace guideXOS.DefaultApps {
         public override void OnDraw() {
             base.OnDraw(); int cx = X + _padding; int cy = Y + _padding; int cw = Width - _padding * 2; int ch = Height - _padding * 2;
             // Buttons
-            int bxSaveAs = cx; int by = cy; int bxSave = bxSaveAs + _btnWSaveAs + 8; int bxWrap = bxSave + _btnWSave + 8;
-            // Visual feedback using UI helper
+            int bxSaveAs = cx; int by = cy;
+            int bxSave = bxSaveAs + _btnWSaveAs + 8;
+            int bxOpen = bxSave + _btnWSave + 8;
+            int bxWrap = bxOpen + _btnWOpen + 8;
+            int bxUndo = bxWrap + _btnWWrap + 8;
+            int bxRedo = bxUndo + _btnWUndo + 8;
+            int fcy = by + (_btnH / 2 - WindowManager.font.FontSize / 2);
+            // Save As
             uint cSaveAs = UI.ButtonFillColor(bxSaveAs, by, _btnWSaveAs, _btnH, 0xFF3A3A3A, 0xFF444444, 0xFF4A4A4A);
-            Framebuffer.Graphics.FillRectangle(bxSaveAs, by, _btnWSaveAs, _btnH, cSaveAs); WindowManager.font.DrawString(bxSaveAs + 6, by + (_btnH / 2 - WindowManager.font.FontSize / 2), "Save As");
+            Framebuffer.Graphics.FillRectangle(bxSaveAs, by, _btnWSaveAs, _btnH, cSaveAs); WindowManager.font.DrawString(bxSaveAs + 6, fcy, "Save As");
+            // Save
             bool canSave = !string.IsNullOrEmpty(_savedPath) && _dirty;
             uint baseSave = canSave ? 0xFF3A3A3Au : 0xFF2A2A2Au;
             uint cSave = UI.ButtonFillColor(bxSave, by, _btnWSave, _btnH, baseSave, 0xFF444444, 0xFF4A4A4A, canSave);
             Framebuffer.Graphics.FillRectangle(bxSave, by, _btnWSave, _btnH, cSave);
-            WindowManager.font.DrawString(bxSave + 12, by + (_btnH / 2 - WindowManager.font.FontSize / 2), "Save");
+            WindowManager.font.DrawString(bxSave + 12, fcy, "Save");
+            // Open
+            uint cOpen = UI.ButtonFillColor(bxOpen, by, _btnWOpen, _btnH, 0xFF3A3A3A, 0xFF444444, 0xFF4A4A4A);
+            Framebuffer.Graphics.FillRectangle(bxOpen, by, _btnWOpen, _btnH, cOpen); WindowManager.font.DrawString(bxOpen + 10, fcy, "Open");
+            // Wrap
             uint cWrap = UI.ButtonFillColor(bxWrap, by, _btnWWrap, _btnH, 0xFF3A3A3A, 0xFF444444, 0xFF4A4A4A);
-            Framebuffer.Graphics.FillRectangle(bxWrap, by, _btnWWrap, _btnH, cWrap); WindowManager.font.DrawString(bxWrap + 10, by + (_btnH / 2 - WindowManager.font.FontSize / 2), _wrap ? "Wrap" : "NoWrap");
+            Framebuffer.Graphics.FillRectangle(bxWrap, by, _btnWWrap, _btnH, cWrap); WindowManager.font.DrawString(bxWrap + 10, fcy, _wrap ? "Wrap" : "NoWrap");
+            // Undo
+            bool canUndo = _undoStack.Count > 0;
+            uint baseUndo = canUndo ? 0xFF3A3A3Au : 0xFF2A2A2Au;
+            uint cUndo = UI.ButtonFillColor(bxUndo, by, _btnWUndo, _btnH, baseUndo, 0xFF444444, 0xFF4A4A4A, canUndo);
+            Framebuffer.Graphics.FillRectangle(bxUndo, by, _btnWUndo, _btnH, cUndo); WindowManager.font.DrawString(bxUndo + 8, fcy, "Undo");
+            // Redo
+            bool canRedo = _redoStack.Count > 0;
+            uint baseRedo = canRedo ? 0xFF3A3A3Au : 0xFF2A2A2Au;
+            uint cRedo = UI.ButtonFillColor(bxRedo, by, _btnWRedo, _btnH, baseRedo, 0xFF444444, 0xFF4A4A4A, canRedo);
+            Framebuffer.Graphics.FillRectangle(bxRedo, by, _btnWRedo, _btnH, cRedo); WindowManager.font.DrawString(bxRedo + 8, fcy, "Redo");
 
             int tx = cx; int ty = cy + _btnH + 8; int tw = cw; int th = ch - (_btnH + 8) - (_statusH + 6);
             if (th < 20) th = 20; // guard
             Framebuffer.Graphics.AFillRectangle(tx, ty, tw, th, 0x80282828);
-            // Word wrap toggle
-            if (_wrap) WindowManager.font.DrawString(tx + 6, ty + 6, _text, tw - 12, WindowManager.font.FontSize * 3);
-            else WindowManager.font.DrawString(tx + 6, ty + 6, _text);
+            // Draw text
+            int textX = tx + 6; int textY = ty + 6;
+            if (_wrap) WindowManager.font.DrawString(textX, textY, _text, tw - 12, th - 12);
+            else WindowManager.font.DrawString(textX, textY, _text);
+
+            // Draw blinking cursor at end of text
+            _cursorTick++;
+            if (_cursorTick >= 30) { _cursorVisible = !_cursorVisible; _cursorTick = 0; }
+            if (_cursorVisible) {
+                int curW = 0; int curLine = 0;
+                for (int i = 0; i < _text.Length; i++) {
+                    if (_text[i] == '\n') { curLine++; curW = 0; continue; }
+                    int cw2 = WindowManager.font.MeasureString(_text[i].ToString());
+                    if (_wrap && tw - 12 > 0 && curW + cw2 > tw - 12) { curLine++; curW = 0; }
+                    curW += cw2;
+                }
+                int cursorX = textX + curW;
+                int cursorY = textY + curLine * WindowManager.font.FontSize;
+                if (cursorY + WindowManager.font.FontSize <= ty + th)
+                    Framebuffer.Graphics.FillRectangle(cursorX, cursorY, 2, WindowManager.font.FontSize, 0xFFCCCCCC);
+            }
 
             // Status bar (bottom)
             DrawStatusBar(cx, cy, cw, ch);

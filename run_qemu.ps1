@@ -6,8 +6,8 @@ Write-Host "   Booting guideXOS in QEMU" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Change to project directory
-Set-Location "D:\devgitlab\guideXOS\guideXOS.UEFI"
+# Change to the directory where this script lives.
+Set-Location $PSScriptRoot
 
 # Verify files exist
 Write-Host "Checking files..." -ForegroundColor Yellow
@@ -49,6 +49,13 @@ if (-not (Test-Path "ESP\ramdisk.img")) {
     Write-Host "  ? ramdisk.img found" -ForegroundColor Green
 }
 
+if (-not (Test-Path "ESP\startup.nsh")) {
+    Write-Host "  Creating ESP\startup.nsh" -ForegroundColor Yellow
+    "fs0:", "\EFI\BOOT\BOOTX64.EFI" | Set-Content -Path "ESP\startup.nsh" -Encoding ASCII
+} else {
+    Write-Host "  ? startup.nsh found" -ForegroundColor Green
+}
+
 Write-Host ""
 
 if (-not $filesOK) {
@@ -70,10 +77,12 @@ Write-Host ""
 try {
     & "C:\Program Files\qemu\qemu-system-x86_64.exe" `
         -drive if=pflash,format=raw,readonly=on,file=OVMF.fd `
-        -drive file=fat:rw:ESP,format=raw `
+        -drive if=none,id=esp,format=raw,file=fat:rw:ESP `
+        -device ide-hd,drive=esp `
         -m 1024M `
         -serial stdio `
         -name "guideXOS" -no-reboot `
+        -boot menu=off,splash-time=0 `
         -display sdl
 } catch {
     Write-Host ""

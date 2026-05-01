@@ -429,6 +429,8 @@ namespace guideXOS.DefaultApps {
             switch (cmd) {
                 case "help":
                     WriteLine("Commands: help, pwd, ls, ll, cd, cd .., clear, exit, cat, echo, notepad <file>, vi <file>, launchscript <file.txt>, gxminfo <file.gxm>, setbg <image>, apps, launch <app>, netinit, ipconfig [/release | /renew], ifconfig, arp, dns <host>, ping <hostOrIp>, authurl <http>, authlogin <u> <p>, authregister <u> <p>, authtoken, logout, shutdown, reboot, osk, workspaces");
+                    WriteLine("");
+                    WriteLine("VFS commands: vfslist, vfsuse <mnt>, vfsmount <img> <mnt> <fstype>, vfsumount <mnt>, vfssync, vfsinfo <mnt>, vfsdf, vfscreateconf");
                     break;
                 case "exit": {
                         this.Visible = false;
@@ -1244,10 +1246,167 @@ namespace guideXOS.DefaultApps {
                         }
                         break;
                     }
+                // ?? Virtual Filesystem management ?????????????????????????????????????
+                case "vfslist": {
+                        var mounts = guideXOS.OS.VirtualDiskAutoMount.GetMountedDisks();
+                        if (mounts.Count == 0) {
+                            WriteLine("No virtual disks mounted.");
+                            WriteLine("");
+                            WriteLine("Troubleshooting:");
+                            WriteLine("  1. Check if /disks/ exists: ls /");
+                            WriteLine("  2. Check for .img files: ls /disks/");
+                            WriteLine("  3. The .img files must be ON the ramdisk, not on your host OS");
+                            WriteLine("  4. Use 'vfsmount <path> <mnt> <fstype>' to manually mount if files exist");
+                            WriteLine("");
+                            WriteLine("See VFS_SETUP_TROUBLESHOOTING.md for detailed setup instructions.");
+                            break;
+                        }
+                        WriteLine(PadRight("MOUNT", 18) + PadRight("FSTYPE", 8) + PadRight("SIZE", 12) + "IMAGE");
+                        WriteLine("----------------------------------------------------------------");
+                        for (int _i = 0; _i < mounts.Count; _i++) {
+                            string _mp = mounts[_i];
+                            string _img, _fs;
+                            ulong _sz;
+                            if (guideXOS.OS.VirtualDiskAutoMount.GetMountInfo(_mp, out _img, out _fs, out _sz)) {
+                                WriteLine(PadRight(_mp, 18) + PadRight(_fs, 8) + PadRight(FmtBytes(_sz), 12) + _img);
+                            }
+                        }
+                        break;
+                    }
+                case "vfsuse": {
+                        if (parts.Length < 2) {
+                            WriteLine("Usage: vfsuse <mountpoint>");
+                            WriteLine("  e.g. vfsuse /mnt/fat32");
+                            WriteLine("  Use 'vfslist' to see mounted disks.");
+                            break;
+                        }
+                        string _mp = parts[1];
+                        if (guideXOS.OS.VirtualDiskAutoMount.SwitchToVirtualDisk(_mp)) {
+                            WriteLine("Active filesystem switched to " + _mp);
+                            WriteLine("All File.* calls now operate on this disk.");
+                        } else {
+                            WriteLine("vfsuse: not mounted: " + _mp);
+                            WriteLine("Use 'vfslist' to see available mount points.");
+                        }
+                        break;
+                    }
+                case "vfsmount": {
+                        if (parts.Length < 4) {
+                            WriteLine("Usage: vfsmount <image_path> <mountpoint> <fstype>");
+                            WriteLine("  fstype : FAT32 | EXT4");
+                            WriteLine("  e.g.   vfsmount /disks/my.img /mnt/data FAT32");
+                            break;
+                        }
+                        string _img  = parts[1];
+                        string _mp   = parts[2];
+                        string _fs   = parts[3];
+                        if (guideXOS.OS.VirtualDiskAutoMount.MountVirtualDisk(_img, _mp, _fs)) {
+                            WriteLine("Mounted " + _img + " at " + _mp + " as " + _fs);
+                        } else {
+                            WriteLine("vfsmount: failed to mount " + _img);
+                            WriteLine("Check the path exists and the fstype is FAT32 or EXT4.");
+                        }
+                        break;
+                    }
+                case "vfsumount": {
+                        if (parts.Length < 2) {
+                            WriteLine("Usage: vfsumount <mountpoint>");
+                            WriteLine("  e.g. vfsumount /mnt/fat32");
+                            break;
+                        }
+                        string _mp = parts[1];
+                        if (guideXOS.OS.VirtualDiskAutoMount.UnmountVirtualDisk(_mp)) {
+                            WriteLine("Unmounted " + _mp + " (changes synced to image).");
+                        } else {
+                            WriteLine("vfsumount: not mounted: " + _mp);
+                        }
+                        break;
+                    }
+                case "vfssync": {
+                        var _mounts = guideXOS.OS.VirtualDiskAutoMount.GetMountedDisks();
+                        if (_mounts.Count == 0) {
+                            WriteLine("No virtual disks to sync.");
+                            break;
+                        }
+                        guideXOS.OS.VirtualDiskAutoMount.SyncAll();
+                        WriteLine("Synced " + _mounts.Count.ToString() + " virtual disk(s) to their image files.");
+                        break;
+                    }
+                case "vfsinfo": {
+                        if (parts.Length < 2) {
+                            WriteLine("Usage: vfsinfo <mountpoint>");
+                            WriteLine("  e.g. vfsinfo /mnt/fat32");
+                            break;
+                        }
+                        string _mp = parts[1];
+                        string _img, _fs;
+                        ulong _sz;
+                        if (!guideXOS.OS.VirtualDiskAutoMount.GetMountInfo(_mp, out _img, out _fs, out _sz)) {
+                            WriteLine("vfsinfo: not mounted: " + _mp);
+                            break;
+                        }
+                        ulong _sectors = _sz / 512;
+                        bool _active = (FS.File.Instance != null &&
+                                        FS.Disk.Instance is Kernel.Drivers.FileDisk);
+                        WriteLine("Mount point : " + _mp);
+                        WriteLine("Image file  : " + _img);
+                        WriteLine("Filesystem  : " + _fs);
+                        WriteLine("Size        : " + FmtBytes(_sz) + " (" + _sz.ToString() + " bytes)");
+                        WriteLine("Sectors     : " + _sectors.ToString() + "  (512 B/sector)");
+                        WriteLine("Active      : " + (_active ? "yes" : "no"));
+                        break;
+                    }
+                case "vfsdf": {
+                        // Walk root and accumulate file sizes as a rough usage figure
+                        try {
+                            var _list = FS.File.GetFiles("");
+                            if (_list == null || _list.Count == 0) {
+                                WriteLine("(empty root or filesystem not active)");
+                                break;
+                            }
+                            ulong _total = 0;
+                            int _files = 0, _dirs = 0;
+                            for (int _i = 0; _i < _list.Count; _i++) {
+                                var _fi = _list[_i];
+                                if ((_fi.Attribute & FS.FileAttribute.Directory) != 0) {
+                                    _dirs++;
+                                } else {
+                                    _total += _fi.Param1; // Param1 = file size in FAT
+                                    _files++;
+                                }
+                            }
+                            WriteLine("Root entries : " + (_files + _dirs).ToString());
+                            WriteLine("  Files      : " + _files.ToString());
+                            WriteLine("  Dirs       : " + _dirs.ToString());
+                            WriteLine("Size (root)  : " + FmtBytes(_total));
+                            // active virtual disk capacity
+                            if (FS.Disk.Instance is Kernel.Drivers.FileDisk _fd) {
+                                WriteLine("Disk size    : " + FmtBytes(_fd.Size));
+                            }
+                        } catch {
+                            WriteLine("vfsdf: error reading filesystem.");
+                        }
+                        break;
+                    }
+                case "vfscreateconf": {
+                        guideXOS.OS.VirtualDiskAutoMount.CreateDefaultConfig();
+                        WriteLine("Created /etc/guidexos/automount.conf");
+                        WriteLine("Edit with: vi /etc/guidexos/automount.conf");
+                        WriteLine("Format per line:  <image>:<mountpoint>:<fstype>");
+                        break;
+                    }
+                // ?? end VFS ???????????????????????????????????????????????????????????
                 default:
                     WriteLine("No such command: \"" + cmdLine + "\"");
                     break;
             }
+        }
+
+        private static string FmtBytes(ulong bytes) {
+            if (bytes < 1024) return bytes.ToString() + " B";
+            if (bytes < 1024 * 1024) return (bytes / 1024).ToString() + " KB";
+            if (bytes < 1024UL * 1024 * 1024) return (bytes / (1024 * 1024)).ToString() + " MB";
+            return (bytes / (1024UL * 1024 * 1024)).ToString() + " GB";
         }
 
         private static bool EqualsIgnoreCase(string a, string b) {

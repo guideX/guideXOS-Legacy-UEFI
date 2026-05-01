@@ -1,4 +1,4 @@
-# guidexos
+# guideXOS Legacy UEFI
 <h1>An operating system written entirely in C#</h1>
 <img alt="" src="screenshots/startmenu.jpg" />
 

@@ -111,9 +111,33 @@ function Test-Command($cmdname) {
     return [bool](Get-Command -Name $cmdname -ErrorAction SilentlyContinue)
 }
 
+function Find-VcVars64($msbuildPath) {
+    $candidateVcVars = @()
+    if ($msbuildPath -and $msbuildPath -ne "msbuild") {
+        $msbuildExe = Get-Item $msbuildPath
+        $vsInstallDir = Split-Path (Split-Path (Split-Path (Split-Path $msbuildExe.FullName -Parent) -Parent) -Parent) -Parent
+        $candidateVcVars += (Join-Path $vsInstallDir "VC\Auxiliary\Build\vcvars64.bat")
+    }
+    $candidateVcVars += @(
+        "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat",
+        "C:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat",
+        "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat",
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat",
+        "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat",
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+    )
+    foreach ($path in $candidateVcVars) {
+        if ($path -and (Test-Path $path)) {
+            return $path
+        }
+    }
+    return $null
+}
+
 Write-Header "Checking Build Tools"
 
 # Check for MSBuild
+$vcvars64 = $null
 if (-not $SkipBootloader) {
     $msbuild = $null
     if (Test-Path "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe") {
@@ -137,11 +161,13 @@ if (-not $SkipBootloader) {
         exit 1
     }
     Write-Success "MSBuild found: $msbuild"
+    $vcvars64 = Find-VcVars64 $msbuild
     
     # Check for EDK II (required for bootloader)
     $edkiiPaths = @(
         "C:\edk2",
         "$RootDir\edk2",
+        "$RootDir\edk2-master",
         "$RootDir\edk2-headers",
         "$env:EDK2_PATH"
     )
@@ -173,6 +199,9 @@ if (-not $SkipKernel) {
     }
     $dotnetVersion = dotnet --version
     Write-Success ".NET SDK found: $dotnetVersion"
+    if (-not $vcvars64) {
+        $vcvars64 = Find-VcVars64 $null
+    }
 }
 
 # Check for Python
@@ -324,7 +353,12 @@ if (-not $SkipKernel) {
 
     # Use dotnet publish to trigger NativeAOT compilation
     # 'dotnet build' only produces IL, 'dotnet publish' triggers native compilation
-    dotnet publish $KernelProject -c Release
+    if ($vcvars64) {
+        Write-Info "Using Visual C++ environment: $vcvars64"
+        & cmd.exe /d /s /c "call `"$vcvars64`" >nul && dotnet publish `"$KernelProject`" -c Release"
+    } else {
+        dotnet publish $KernelProject -c Release
+    }
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Kernel build failed with exit code $LASTEXITCODE"

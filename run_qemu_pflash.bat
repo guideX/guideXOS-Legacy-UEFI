@@ -7,8 +7,8 @@ echo    (Using pflash method)
 echo ========================================
 echo.
 
-REM Change to the guideXOS.UEFI directory
-cd /d D:\devgitlab\guideXOS\guideXOS.UEFI
+REM Change to the directory where this script lives.
+cd /d "%~dp0"
 
 REM Verify files exist
 echo Checking files...

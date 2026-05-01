@@ -1,0 +1,436 @@
+using guideXOS.DefaultApps;
+using guideXOS.FS;
+using guideXOS.Kernel.Drivers;
+using guideXOS.Misc;
+using guideXOS.OS;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Windows.Forms;
+namespace guideXOS.GUI {
+    /// <summary>
+    /// Desktop
+    /// </summary>
+    internal static class Desktop {
+        // Helpers for fuzzy executable resolution
+        private static bool HasDot(string s) {
+            for (int i = 0; i < s.Length; i++)
+                if (s[i] == '.') return true;
+            return false;
+        }
+        private static bool StartsWithStr(string s, string pref) {
+            int l = pref.Length;
+            if (s.Length < l) return false;
+            for (int i = 0; i < l; i++)
+                if (s[i] != pref[i]) return false;
+            return true;
+        }
+        /// <summary>
+        /// Try Fuzzy Exec
+        /// </summary>
+        /// <param name="dir"></param>
+        /// <param name="token"></param>
+        /// <param name="match"></param>
+        /// <param name="ambiguous"></param>
+        /// <returns></returns>
+        private static bool TryFuzzyExec(string dir, string token, out string match, out bool ambiguous) {
+            match = null;
+            ambiguous = false;
+            var list = File.GetFiles(dir);
+            int matches = 0;
+            if (list != null) {
+                for (int i = 0; i < list.Count; i++) {
+                    var fi = list[i];
+                    if (fi.Attribute != FileAttribute.Directory) {
+                        string nm = fi.Name;
+                        if (nm.Length > token.Length + 1 && StartsWithStr(nm, token) && nm[token.Length] == '.') {
+                            int len = nm.Length;
+                            bool gxm = len >= 4 && nm[len - 1] == 'm' && nm[len - 2] == 'x' && nm[len - 3] == 'g' && nm[len - 4] == '.';
+                            bool mue = len >= 4 && nm[len - 1] == 'e' && nm[len - 2] == 'u' && nm[len - 3] == 'm' && nm[len - 4] == '.';
+                            if (gxm || mue) {
+                                matches++;
+                                match = nm;
+                            }
+                        }
+                    }
+                    fi.Dispose();
+                }
+                list.Dispose();
+            }
+            if (matches == 1) return true;
+            if (matches > 1) {
+                ambiguous = true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Dir
+        /// </summary>
+        public static string Dir;
+        /// <summary>
+        /// Home mode: when true, show app icons and special desktop icons. When false, show real filesystem entries for Dir.
+        /// </summary>
+        public static bool HomeMode;
+        /// <summary>
+        /// Taskbar
+        /// </summary>
+        public static Taskbar Taskbar;
+        /// <summary>
+        /// Image Viewer
+        /// </summary>
+        public static ImageViewer imageViewer;
+        /// <summary>
+        /// Message Box
+        /// </summary>
+        public static MessageBox msgbox;
+        /// <summary>
+        /// Wav Player
+        /// </summary>
+        public static WAVPlayer wavplayer;
+        /// <summary>
+        /// Apps
+        /// </summary>
+        public static AppCollection Apps;
+        /// <summary>
+        /// File Explorer window
+        /// </summary>
+        static ComputerFiles compFiles;
+        /// <summary>
+        /// Is At Root
+        /// </summary>
+        public static bool IsAtRoot {
+            get => Desktop.Dir.Length < 1;
+        }
+
+        // FIXED: Cache USB Drive labels to prevent per-frame allocations
+        private static string[] _usbDriveLabels = null;
+        private static int _lastUSBCount = -1;
+
+        /// <summary>
+        /// Initialize
+        /// </summary>
+        public static void Initialize() {
+            BootConsole.WriteLine("[DESKTOP] INIT");
+            Apps = null;
+            IndexClicked = -1;
+            // Load taskbar icon — skip PNG decode in UEFI (DEFLATE hangs)
+            Image taskbarIcon;
+            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) {
+                taskbarIcon = new Image(32, 32);
+            } else {
+                try { taskbarIcon = new PNG(File.ReadAllBytes("Images/startmenubutton.png")); }
+                catch { taskbarIcon = new Image(32, 32); }
+            }
+            Taskbar = new Taskbar(40, taskbarIcon);
+            Dir = "";
+            HomeMode = true;
+            LastPoint.X = -1;
+            LastPoint.Y = -1;
+            _dirCacheDirty = true;
+            _dirCacheFor = null;
+            _dirCache = null;
+            compFiles = null;
+            _lastUSBCount = -1;
+            _usbDriveLabels = null;
+        }
+        /// <summary>
+        /// Heuristic: if a USB MSC disk is present and marked ready, show installer icon.
+        /// In future, this can check actual boot device id.
+        /// </summary>
+        private static bool IsBootFromUSB() {
+            try {
+                // If an IDE/SATA system disk exists and at least one USB MSC removable is present, assume live USB boot.
+                bool hasIde = guideXOS.FS.Disk.Instance is guideXOS.Kernel.Drivers.IDEDevice;
+                var dev = guideXOS.Kernel.Drivers.USBStorage.GetFirst();
+                if (dev != null) {
+                    var disk = guideXOS.Kernel.Drivers.USBMSC.TryOpenDisk(dev);
+                    if (disk != null && disk.IsReady) return true;
+                }
+                // Fallback: if multiple USB storage devices, also suggest installer
+                if (guideXOS.Kernel.Drivers.USBStorage.Count > 0 && !hasIde) return true;
+            } catch { }
+            return false;
+        }
+        /// <summary>
+        /// Bar Height
+        /// </summary>
+        const int BarHeight = 40;
+        static List<FileInfo> _dirCache;
+        static string _dirCacheFor;
+        static bool _dirCacheDirty;
+
+        static void ClearDirCache() {
+            if (_dirCache != null) {
+                for (int i = 0; i < _dirCache.Count; i++) {
+                    _dirCache[i].Dispose();
+                }
+                _dirCache.Dispose();
+                _dirCache = null;
+            }
+            _dirCacheFor = null;
+        }
+        /// <summary>
+        /// Get Directory Entries
+        /// </summary>
+        /// <returns></returns>
+        static List<FileInfo> GetDirectoryEntries() {
+            if (_dirCache == null || _dirCacheDirty || _dirCacheFor == null || _dirCacheFor != Dir) {
+                // Dispose previous cache
+                ClearDirCache();
+                // Refresh cache for current Dir
+                _dirCache = File.GetFiles(Dir);
+                _dirCacheFor = Dir;
+                _dirCacheDirty = false;
+            }
+            return _dirCache;
+        }
+        /// <summary>
+        /// Is Mouse Over any Visible Window
+        /// </summary>
+        /// <returns></returns>
+        static bool IsMouseOverAnyVisibleWindow() {
+            for (int d = 0; d < WindowManager.Windows.Count; d++) {
+                if (WindowManager.Windows[d].Visible && WindowManager.Windows[d].IsUnderMouse())
+                    return true;
+            }
+            return false;
+        }
+        /*
+        private static bool ShouldHideAppOnDesktop(string name) {
+            // hide these app icons only on desktop
+            // compare by lowercase name for safety
+            string n = name;
+            // Build a simple lowercase comparable copy
+            int len = n.Length;
+            bool match = false;
+            // quick helpers
+            bool Eq(string a) {
+                if (a.Length != len) return false;
+                for (int i = 0; i < len; i++) {
+                    char ca = n[i]; if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+                    char cb = a[i]; if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+                    if (ca != cb) return false;
+                }
+                return true;
+            }
+            if (Eq("lock") || Eq("notepad") || Eq("task manager") || Eq("start menu") || Eq("monitor") || Eq("console") || Eq("paint") || Eq("clock") || Eq("calculator")) match = true;
+            return match;
+        }
+        */
+        /// <summary>
+        /// Update
+        /// </summary>
+        /// <param name="DocumentIcon32"></param>
+        public static int IconSize = 48; // default desktop icon size changed from 32 to 48
+        /// <summary>
+        /// Set Icon Size
+        /// </summary>
+        /// <param name="size"></param>
+        public static void SetIconSize(int size) {
+            if (size != 16 && size != 24 && size != 32 && size != 48 && size != 128) return;
+            IconSize = size;
+        }
+        /// <summary>
+        /// Update
+        /// </summary>
+        /// <param name="documentIcon"></param>
+        /// <param name="folderIcon"></param>
+        /// <param name="imageIcon"></param>
+        /// <param name="audioIcon"></param>
+        /// <param name="iconSize"></param>
+        public static void Update(Image documentIcon, Image folderIcon, Image imageIcon, Image audioIcon, int iconSize) {
+            // UEFI bring-up uses the boot splash as the desktop and avoids the
+            // managed Taskbar instance path, which is not stable after ExitBootServices.
+            if (BootConsole.CurrentMode == BootMode.UEFI) return;
+
+            if (Program.WidgetsContainer != null) {
+                Program.WidgetsContainer.UpdateAutoHide();
+            }
+            // Draw taskbar
+            Taskbar.Draw();
+        }
+        /// <summary>
+        /// Last Point
+        /// </summary>
+        public static Point LastPoint;
+        /// <summary>
+        /// Click Event
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="isDirectory"></param>
+        /// <param name="X"></param>
+        /// <param name="Y"></param>
+        /// <param name="i"></param>
+        /// <param name="clickable"></param>
+        /// <param name="leftDown"></param>
+        private static bool _mouseClickLatch = false; // added latch to prevent repeated OnClick while mouse held
+        private static void ClickEvent(string name, bool isDirectory, int X, int Y, int i, bool clickable, bool leftDown) {
+            if (leftDown) {
+                if (!WindowManager.HasWindowMoving && clickable && !ClickLock && !_mouseClickLatch &&
+                  Control.MousePosition.X > X && Control.MousePosition.X < X + Icons.DocumentIcon(IconSize).Width &&
+                  Control.MousePosition.Y > Y && Control.MousePosition.Y < Y + Icons.DocumentIcon(IconSize).Height) {
+                    IndexClicked = i;
+                    OnClick(name, isDirectory, X, Y);
+                    _mouseClickLatch = true;
+                }
+            } else {
+                ClickLock = false;
+                _mouseClickLatch = false;
+            }
+            if (IndexClicked == i) {
+                int w = (int)(Icons.DocumentIcon(IconSize).Width * 1.5f);
+                Framebuffer.Graphics.AFillRectangle(X + ((Icons.DocumentIcon(IconSize).Width / 2) - (w / 2)), Y, w, Icons.DocumentIcon(IconSize).Height * 2, 0x7F2E86C1);
+            }
+        }
+        static bool ClickLock = false;
+        static int IndexClicked;
+        /// <summary>
+        /// On Click
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="isDirectory"></param>
+        /// <param name="itemX"></param>
+        /// <param name="itemY"></param>
+        public static void OnClick(string name, bool isDirectory, int itemX, int itemY) {
+            ClickLock = true;
+            // Special desktop controls
+            if (name == "Root" && HomeMode) {
+                HomeMode = false;
+                _dirCacheDirty = true;
+                IndexClicked = -1;
+                return;
+            }
+            // Launch HD installer from desktop icon
+            if (name == "Install to Hard Drive" && HomeMode) {
+                var installer = new guideXOS.DefaultApps.HDInstaller(itemX + 60, itemY + 60);
+                WindowManager.MoveToEnd(installer);
+                installer.Visible = true;
+                IndexClicked = -1;
+                return;
+            }
+            if (name == "Computer Files" && HomeMode) {
+                // FIXED: Reuse existing ComputerFiles window instead of creating new one!
+                if (compFiles == null) {
+                    compFiles = new ComputerFiles(300, 200, 540, 380);
+                }
+                if (!compFiles.Visible) {
+                    compFiles.Visible = true;
+                }
+                WindowManager.MoveToEnd(compFiles); // Bring to front
+                return;
+            }
+            // Click on USB drive icon opens Computer Files too (when on Home desktop)
+            if (HomeMode) {
+                string usbPrefix = "USB Drive";
+                bool isUsb = name.Length >= usbPrefix.Length;
+                if (isUsb) {
+                    for (int pi = 0; pi < usbPrefix.Length; pi++) {
+                        if (name[pi] != usbPrefix[pi]) {
+                            isUsb = false;
+                            break;
+                        }
+                    }
+                }
+                // FIXED: NEVER dispose string literals - they are constants!
+                if (isUsb) {
+                    // FIXED: Reuse existing ComputerFiles window!
+                    if (compFiles == null) {
+                        compFiles = new ComputerFiles(300, 200, 540, 380);
+                    }
+                    if (!compFiles.Visible) {
+                        compFiles.Visible = true;
+                    }
+                    WindowManager.MoveToEnd(compFiles); // Bring to front
+                    return;
+                }
+            }
+            if (name == "Desktop" && !HomeMode) {
+                HomeMode = true;
+                if (Dir.Length != 0) {
+                    Dir.Dispose();
+                }
+                Dir = "";
+                _dirCacheDirty = true;
+                IndexClicked = -1;
+                return;
+            }
+
+            string devider = "/";
+            string path = Dir + name;
+            if (isDirectory) {
+                string newd = Dir + name + devider;
+                Dir.Dispose();
+                Dir = newd;
+                _dirCacheDirty = true;
+                IndexClicked = -1;
+            } else if (name.EndsWith(".png")) {
+                byte[] buffer = File.ReadAllBytes(path);
+                PNG png = new(buffer);
+                buffer.Dispose();
+                imageViewer.SetImage(png);
+                png.Dispose();
+                WindowManager.MoveToEnd(imageViewer);
+                imageViewer.Visible = true;
+                RecentManager.AddDocument(path, Icons.ImageIcon(32));
+            } else if (name.EndsWith(".bmp")) {
+                byte[] buffer = File.ReadAllBytes(path);
+                Bitmap png = new(buffer);
+                buffer.Dispose();
+                imageViewer.SetImage(png);
+                png.Dispose();
+                WindowManager.MoveToEnd(imageViewer);
+                imageViewer.Visible = true;
+                RecentManager.AddDocument(path, Icons.ImageIcon(32));
+            } else if (name.EndsWith(".txt")) {
+                // Open in Notepad
+                var notepad = new Notepad(itemX + 40, itemY + 40);
+                notepad.OpenFile(path);
+                WindowManager.MoveToEnd(notepad);
+                notepad.Visible = true;
+                RecentManager.AddDocument(path, Icons.DocumentIcon(32));
+            } else if (name.EndsWith(".gxm") || name.EndsWith(".mue")) {
+                byte[] buffer = File.ReadAllBytes(path);
+                string err;
+                bool ok = GXMLoader.TryExecute(buffer, out err);
+                if (!ok) {
+                    msgbox.X = itemX + 60;
+                    msgbox.Y = itemY + 60;
+                    msgbox.SetText(err ?? "Failed to run executable");
+                    WindowManager.MoveToEnd(msgbox);
+                    msgbox.Visible = true;
+                } else {
+                    RecentManager.AddDocument(path, Icons.DocumentIcon(32));
+                }
+            } else if (name.EndsWith(".wav")) {
+                if (Audio.HasAudioDevice) {
+                    wavplayer.Visible = true;
+                    byte[] buffer = File.ReadAllBytes(path);
+                    unsafe {
+                        fixed (char* ptr = name) wavplayer.Play(buffer, new string(ptr));
+                    }
+                    RecentManager.AddDocument(path, Icons.AudioIcon(32));
+                } else {
+                    msgbox.X = itemX + 75;
+                    msgbox.Y = itemY + 75;
+                    msgbox.SetText("Audio controller is unavailable!");
+                    WindowManager.MoveToEnd(msgbox);
+                    msgbox.Visible = true;
+                }
+            } else if (!Apps.Load(name)) {
+                msgbox.X = itemX + 75;
+                msgbox.Y = itemY + 75;
+                msgbox.SetText("No application can open this file!");
+                WindowManager.MoveToEnd(msgbox);
+                msgbox.Visible = true;
+            }
+            path.Dispose();
+            devider.Dispose();
+        }
+        /// <summary>
+        /// Invalidate Directory Cache
+        /// </summary>
+        public static void InvalidateDirCache() {
+            _dirCacheDirty = true;
+        }
+    }
+}

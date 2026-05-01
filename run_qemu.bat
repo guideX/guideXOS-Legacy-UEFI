@@ -6,21 +6,15 @@ echo    Booting guideXOS in QEMU
 echo ========================================
 echo.
 
-REM Change to the guideXOS.UEFI directory (where this script lives)
-cd /d D:\devgitlab\guideXOS\guideXOS.UEFI
+REM Change to the directory where this script lives.
+cd /d "%~dp0"
 
 REM Verify files exist
 echo Checking files...
 if not exist "OVMF.fd" (
-    REM Try to copy from guideXOS folder if it exists there
-    if exist "D:\devgitlab\guideXOS\guideXOS\OVMF.fd" (
-        copy "D:\devgitlab\guideXOS\guideXOS\OVMF.fd" "OVMF.fd"
-        echo   [OK] Copied OVMF.fd from guideXOS folder
-    ) else (
-        echo ERROR: OVMF.fd not found!
-        pause
-        exit /b 1
-    )
+    echo ERROR: OVMF.fd not found!
+    pause
+    exit /b 1
 ) else (
     echo   [OK] OVMF.fd found
 )

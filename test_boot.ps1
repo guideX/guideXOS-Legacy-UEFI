@@ -6,7 +6,7 @@ Write-Host "   Testing guideXOS Boot" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-Set-Location "D:\devgitlab\guideXOS\guideXOS"
+Set-Location $PSScriptRoot
 
 # Verify all required files
 $allGood = $true

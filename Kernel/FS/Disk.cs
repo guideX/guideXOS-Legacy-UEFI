@@ -1,19 +1,19 @@
 namespace guideXOS.FS {
-/// <summary>
-/// Disk
-/// </summary>
-public abstract unsafe class Disk {
     /// <summary>
-    /// Instance
+    /// Disk
     /// </summary>
-    public static Disk Instance;
-    /// <summary>
-    /// Constructor
-    /// </summary>
-    public Disk() {
-        // DO NOT set Instance here - let derived classes do it after they're fully initialized
-        // This prevents TarFS from trying to read before Ramdisk.ptr is set
-    }
+    public abstract unsafe class Disk {
+        /// <summary>
+        /// Instance
+        /// </summary>
+        public static Disk Instance;
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        public Disk() {
+            // DO NOT set Instance here - let derived classes do it after they're fully initialized
+            // This prevents TarFS from trying to read before Ramdisk.ptr is set
+        }
         /// <summary>
         /// Read
         /// </summary>

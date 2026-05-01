@@ -411,7 +411,7 @@ namespace guideXOS.DefaultApps {
                 if (_showDrives) {
                     int icon = _iconFolder != null ? _iconFolder.Width : 48;
                     int tileW = icon + pad * 2;
-                    int tileH = icon + WindowManager.font.FontSize + pad;
+                    int tileH = icon + WindowManager.font.FontSize * 2 + pad;
                     int rcX = X + leftW + 8;
                     int rcW = contentW - leftW - 8;
                     int cols = tileW > 0 ? rcW / tileW : 1;
@@ -440,7 +440,7 @@ namespace guideXOS.DefaultApps {
                     }
                 } else {
                     EnsureEntries(); var list = _entriesCache; if (list == null) return;
-                    int icon = _iconFolder != null ? _iconFolder.Width : 48; int tileW = icon + pad * 2; int tileH = icon + WindowManager.font.FontSize + pad;
+                    int icon = _iconFolder != null ? _iconFolder.Width : 48; int tileW = icon + pad * 2; int tileH = icon + WindowManager.font.FontSize * 2 + pad;
                     int rcX = X + leftW + 8; int rcW = contentW - leftW - 8; int cols = tileW > 0 ? rcW / tileW : 1; if (cols < 1) cols = 1;
                     for (int i = 0; i < list.Count; i++) {
                         // Apply search filter
@@ -525,7 +525,7 @@ namespace guideXOS.DefaultApps {
                 if (_drives == null) return 0;
                 int icon = _iconFolder != null ? _iconFolder.Width : 48;
                 int tileWLocal = icon + pad * 2;
-                int tileH = icon + WindowManager.font.FontSize + pad;
+                int tileH = icon + WindowManager.font.FontSize * 2 + pad;
                 int colsLocal = tileWLocal > 0 ? contentW / tileWLocal : 1;
                 if (colsLocal < 1) colsLocal = 1;
                 int rowsLocal = (_drives.Count + colsLocal - 1) / colsLocal;
@@ -534,7 +534,7 @@ namespace guideXOS.DefaultApps {
             }
             EnsureEntries();
             var list = _entriesCache;
-            int ic = _iconFolder != null ? _iconFolder.Width : 48; int tileW = ic + pad * 2; int tileH2 = ic + WindowManager.font.FontSize + pad;
+            int ic = _iconFolder != null ? _iconFolder.Width : 48; int tileW = ic + pad * 2; int tileH2 = ic + WindowManager.font.FontSize * 2 + pad;
             int cols = tileW > 0 ? contentW / tileW : 1; if (cols < 1) cols = 1;
             int rows = (list.Count + cols - 1) / cols; if (rows < 1) rows = 1;
             return rows * tileH2;
@@ -632,7 +632,7 @@ namespace guideXOS.DefaultApps {
 
                 int icon = _iconFolder != null ? _iconFolder.Width : 48;
                 int tileW = icon + pad * 2;
-                int tileH = icon + WindowManager.font.FontSize + pad;
+                int tileH = icon + WindowManager.font.FontSize * 2 + pad;
                 int cols = tileW > 0 ? rcW / tileW : 1;
                 if (cols < 1) cols = 1;
 
@@ -654,15 +654,15 @@ namespace guideXOS.DefaultApps {
                     }
 
                     if (driveIcon != null) Framebuffer.Graphics.DrawImage(gx, gy, driveIcon);
-                    WindowManager.font.DrawString(gx, gy + icon + 6, drive.Name, tileW - pad, WindowManager.font.FontSize);
+                    WindowManager.font.DrawString(gx, gy + icon + 6, drive.Name, icon, WindowManager.font.FontSize * 2);
                 }
             } else {
                 EnsureEntries(); var list = _entriesCache; if (list != null) {
-                    int icon = _iconFolder != null ? _iconFolder.Width : 48; int tileW = icon + pad * 2; int tileH = icon + WindowManager.font.FontSize + pad; int cols = tileW > 0 ? rcW / tileW : 1; if (cols < 1) cols = 1;
+                    int icon = _iconFolder != null ? _iconFolder.Width : 48; int tileW = icon + pad * 2; int tileH = icon + WindowManager.font.FontSize * 2 + pad; int cols = tileW > 0 ? rcW / tileW : 1; if (cols < 1) cols = 1;
                     for (int i = 0; i < list.Count; i++) {
                         string name = list[i].Name; bool matches = string.IsNullOrEmpty(_search) || ContainsIgnoreCase(name, _search); if (!matches) continue; int gridX = i % cols; int gridY = i / cols; int gx = rcX + gridX * tileW + pad; int gy = contentY + gridY * tileH + pad - _scroll; if (gy + tileH < contentY || gy > contentY + contentH) continue; bool isDir = list[i].Attribute == FileAttribute.Directory; if (isDir) { if (_iconFolder != null) Framebuffer.Graphics.DrawImage(gx, gy, _iconFolder); } else { if (_iconDoc != null) Framebuffer.Graphics.DrawImage(gx, gy, _iconDoc); }
-                        // Draw label clipped to single line width without pre-truncation allocations
-                        WindowManager.font.DrawString(gx, gy + icon + 6, name, tileW - pad, WindowManager.font.FontSize);
+                        // Draw label clipped to icon width to prevent overhang into adjacent tiles
+                        WindowManager.font.DrawString(gx, gy + icon + 6, name, icon, WindowManager.font.FontSize * 2);
                     }
                 }
             }

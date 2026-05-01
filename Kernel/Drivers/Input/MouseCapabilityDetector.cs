@@ -352,12 +352,15 @@ namespace guideXOS.Kernel.Drivers.Input {
         /// Debug logging helper
         /// </summary>
         private static void DebugLog(string message) {
-            // Output to both BootConsole and serial
+            // In UEFI mode BootConsole already writes to serial. Avoid duplicate output
+            // during fragile post-ExitBootServices bring-up.
             try {
                 BootConsole.WriteLine(message);
             } catch {
                 // BootConsole might not be available
             }
+
+            if (BootConsole.CurrentMode == guideXOS.BootMode.UEFI) return;
             
             // Serial output
             if (message == null) return;

@@ -18,6 +18,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\Display.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\EHCI.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\ES1371.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Drivers\FileDisk.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\Framebuffer.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\HID.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Drivers\HPET.cs" />

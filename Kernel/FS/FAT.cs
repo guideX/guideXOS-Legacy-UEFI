@@ -741,6 +741,83 @@ namespace guideXOS.FS {
             parent.Dispose(); just.Dispose(); shortName.Dispose();
         }
 
+        /// <summary>
+        /// Creates a directory on the FAT filesystem. Creates parent directories as needed.
+        /// </summary>
+        public void CreateDirectory(string path) {
+            // Normalize: strip leading/trailing slashes
+            while (path.Length > 0 && path[0] == '/') path = path.Substring(1);
+            while (path.Length > 0 && path[path.Length - 1] == '/') path = path.Substring(0, path.Length - 1);
+            if (path.Length == 0) return;
+
+            // Split into components and create each level
+            var parts = path.Split('/');
+            string built = "";
+            for (int pi = 0; pi < parts.Length; pi++) {
+                string component = parts[pi];
+                if (component.Length == 0) continue;
+
+                string parentPath = built;
+                built = built.Length > 0 ? built + "/" + component : component;
+
+                // Check if this level already exists
+                var check = FindPath(built);
+                if (check.Found) continue;
+
+                // Resolve parent cluster
+                uint parentCluster = _type == FatType.FAT32 ? _rootCluster : 0;
+                if (parentPath.Length > 0) {
+                    var pr = FindPath(parentPath);
+                    if (!pr.Found) return; // parent missing and we couldn't create it
+                    parentCluster = pr.FirstCluster;
+                }
+
+                // Find a free directory entry slot in the parent
+                bool exists;
+                var loc = FindEntryLoc(parentCluster, component, true, out exists);
+                if (exists) continue; // already exists
+                if (!loc.Found) {
+                    EnsureDirHasFreeSlot(parentCluster, ref loc);
+                    if (!loc.Found) return; // no space
+                }
+
+                // Allocate one cluster for the new directory
+                uint newCluster = NextFreeCluster(2);
+                if (newCluster == 0) return; // no space
+                WriteFatEntry(newCluster, EOC());
+                ZeroCluster(newCluster);
+
+                // Write "." entry (points to self)
+                uint dotSec = FirstSectorOfCluster(newCluster);
+                var dotData = ReadSectorsCached(dotSec, 1);
+                fixed (byte* p = dotData) {
+                    DirEntry* dot = (DirEntry*)p;
+                    for (int k = 0; k < 11; k++) dot->Name83[k] = (byte)' ';
+                    dot->Name83[0] = (byte)'.';
+                    dot->Attr = 0x10;
+                    dot->FstClusHI = (ushort)((newCluster >> 16) & 0xFFFF);
+                    dot->FstClusLO = (ushort)(newCluster & 0xFFFF);
+                    dot->FileSize = 0;
+
+                    // Write ".." entry (points to parent)
+                    DirEntry* dotdot = (DirEntry*)(p + 32);
+                    for (int k = 0; k < 11; k++) dotdot->Name83[k] = (byte)' ';
+                    dotdot->Name83[0] = (byte)'.';
+                    dotdot->Name83[1] = (byte)'.';
+                    dotdot->Attr = 0x10;
+                    dotdot->FstClusHI = (ushort)((parentCluster >> 16) & 0xFFFF);
+                    dotdot->FstClusLO = (ushort)(parentCluster & 0xFFFF);
+                    dotdot->FileSize = 0;
+                }
+                WriteSector(dotSec, dotData);
+
+                // Write the directory entry in the parent
+                string shortName = GenerateShortName(component);
+                WriteDirEntry(loc, shortName, newCluster, 0, 0x10);
+                shortName.Dispose();
+            }
+        }
+
         public override void Format() {
             // Format the disk as FAT32
             // Get total sectors from disk
