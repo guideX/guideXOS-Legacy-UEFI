@@ -1,3 +1,4 @@
+using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -95,6 +96,19 @@ unsafe class Program {
     /// Last Icon Cache Refresh
     /// </summary>
     private static ulong _lastIconCacheRefresh = 0;
+    /// <summary>
+    /// UEFI-safe polled input state
+    /// </summary>
+    private static bool _uefiInputInitialized = false;
+    private static bool _uefiKeyboardExtended = false;
+    private static int _uefiMousePhase = 0;
+    private static byte _uefiMouseB0 = 0;
+    private static byte _uefiMouseB1 = 0;
+    private static int _uefiCursorLastX = -1;
+    private static int _uefiCursorLastY = -1;
+    private static bool _uefiCursorEverDrawn = false;
+    private static bool _uefiKeyboardSeen = false;
+    private static bool _uefiMouseSeen = false;
     #endregion
     /// <summary>
     /// USB Mouse Test
@@ -835,6 +849,10 @@ unsafe class Program {
                     MouseEventDispatcher.Update();
                 } catch { }
 
+                if (isUefi) {
+                    PollUefiInput();
+                }
+
                 if (debugFrame) SerialChar('D'); // D = post-mouse
 
                 // Per-frame input pass
@@ -905,6 +923,12 @@ unsafe class Program {
 
                 if (debugFrame) SerialChar('H'); // H = post-background
 
+                if (isUefi && frameCounter == 1) {
+                    SerialChar('U'); SerialChar('I');
+                    DrawUefiReadyDesktop();
+                    SerialChar('D'); SerialChar('\n');
+                }
+
                 // Context menu - skip in UEFI (RightMenu is null)
                 if (!isUefi) {
                     try {
@@ -964,8 +988,8 @@ unsafe class Program {
 
                 if (debugFrame) SerialChar('K'); // K = pre-cursor
 
-                // Draw cursor. UEFI has no active post-ExitBootServices pointer provider yet,
-                // so avoid managed cursor image blits during bring-up.
+                // Draw cursor. UEFI uses a direct framebuffer cursor because the managed
+                // cursor image path still depends on legacy graphics assumptions.
                 if (!isUefi) {
                     try {
                         var img = (Control.MouseButtons & MouseButtons.Left) == MouseButtons.Left ? CursorMoving : Cursor;
@@ -977,6 +1001,8 @@ unsafe class Program {
                     } catch {
                         if (debugFrame) { SerialChar('x'); SerialChar('K'); }
                     }
+                } else {
+                    DrawUefiCursor();
                 }
 
                 if (debugFrame) SerialChar('L'); // L = pre-update
@@ -992,9 +1018,13 @@ unsafe class Program {
 
                 if (debugFrame) { SerialChar('Z'); SerialChar('\n'); } // Z = frame complete
 
+                if (isUefi && frameCounter == 4) {
+                    SerialChar('R'); SerialChar('E'); SerialChar('A'); SerialChar('D'); SerialChar('Y'); SerialChar('\n');
+                }
+
                 if (isUefi) {
                     DrawUefiHeartbeat(frameCounter);
-                    if ((frameCounter & 0xFFF) == 0) {
+                    if ((frameCounter & 0xFFFF) == 0) {
                         SerialChar('H'); SerialChar('B'); SerialChar('\n');
                     }
                 }
@@ -1030,6 +1060,349 @@ unsafe class Program {
             for (int x = 0; x < fbW; x++) {
                 fb[y * fbW + x] = color;
             }
+        }
+    }
+    /// <summary>
+    /// One-time UEFI ready screen drawn directly to GOP memory.
+    /// </summary>
+    private static void DrawUefiReadyDesktop() {
+        uint* fb = GetUefiFramebuffer();
+        int fbW = Framebuffer.Width;
+        int fbH = Framebuffer.Height;
+        if (fb == null || fbW <= 0 || fbH <= 0) return;
+
+        for (int y = 0; y < fbH; y++) {
+            int shade = (y * 64) / fbH;
+            uint color = (uint)(0xFF102030 + (shade << 16) + (shade << 8));
+            for (int x = 0; x < fbW; x++) {
+                fb[y * fbW + x] = color;
+            }
+        }
+
+        DrawUefiFillRect(fb, fbW, fbH, 0, 0, fbW, 58, 0xFF182836u);
+        DrawUefiFillRect(fb, fbW, fbH, 0, fbH - 44, fbW, 44, 0xFF151A22u);
+        DrawUefiFillRect(fb, fbW, fbH, 0, 58, fbW, 2, 0xFF36C2B4u);
+        DrawUefiFillRect(fb, fbW, fbH, 0, fbH - 46, fbW, 2, 0xFF36C2B4u);
+
+        DrawUefiTinyText(fb, fbW, fbH, 24, 18, "GUIDEXOS UEFI READY", 3, 0xFFFFFFFFu);
+        DrawUefiTinyText(fb, fbW, fbH, 24, 82, "RAMDISK OK", 2, 0xFFCDEEEAu);
+        DrawUefiTinyText(fb, fbW, fbH, 24, 110, "RENDER LOOP ACTIVE", 2, 0xFFCDEEEAu);
+        DrawUefiTinyText(fb, fbW, fbH, 24, 138, "INPUT POLL ACTIVE", 2, 0xFFCDEEEAu);
+
+        int iconY = fbH > 260 ? 210 : 150;
+        DrawUefiLauncher(fb, fbW, fbH, 36, iconY, 0xFF47D6C8u, "FILES");
+        DrawUefiLauncher(fb, fbW, fbH, 132, iconY, 0xFFFFD166u, "APPS");
+        DrawUefiLauncher(fb, fbW, fbH, 228, iconY, 0xFFFF6B6Bu, "SETUP");
+
+        DrawUefiFillRect(fb, fbW, fbH, 18, fbH - 34, 92, 24, 0xFF263241u);
+        DrawUefiTinyText(fb, fbW, fbH, 30, fbH - 28, "START", 2, 0xFFFFFFFFu);
+        DrawUefiTinyText(fb, fbW, fbH, fbW - 176, fbH - 28, "UEFI BOOT OK", 2, 0xFFCDEEEAu);
+    }
+
+    private static uint* GetUefiFramebuffer() {
+        return Framebuffer.OriginalVideoMemory != null
+            ? Framebuffer.OriginalVideoMemory
+            : (Framebuffer.VideoMemory != null
+                ? Framebuffer.VideoMemory
+                : (Framebuffer.Graphics != null ? Framebuffer.Graphics.VideoMemory : null));
+    }
+    private static void PollUefiInput() {
+        if (!_uefiInputInitialized) {
+            InitializeUefiInput();
+        }
+
+        for (int i = 0; i < 16; i++) {
+            byte status = Native.In8(0x64);
+            if ((status & 0x01) == 0) return;
+
+            bool fromMouse = (status & 0x20) != 0;
+            byte data = Native.In8(0x60);
+            if (fromMouse) {
+                ProcessUefiPs2MouseByte(data);
+            } else {
+                ProcessUefiPs2KeyboardByte(data);
+            }
+        }
+    }
+
+    private static void InitializeUefiInput() {
+        _uefiInputInitialized = true;
+        _uefiMousePhase = 0;
+        _uefiKeyboardExtended = false;
+
+        if (Framebuffer.Width > 0 && Framebuffer.Height > 0) {
+            Control.MousePosition.X = Framebuffer.Width / 2;
+            Control.MousePosition.Y = Framebuffer.Height / 2;
+        }
+        Control.MouseButtons = MouseButtons.None;
+
+        UefiPs2Drain(32);
+        UefiPs2WaitInputClear();
+        Native.Out8(0x64, 0xA8); // Enable auxiliary PS/2 mouse port.
+        UefiPs2MouseWrite(0xF6); // Set defaults.
+        UefiPs2MouseWrite(0xF4); // Enable streaming packets.
+        UefiPs2Drain(32);
+
+        SerialChar('I'); SerialChar('N'); SerialChar('P'); SerialChar('\n');
+    }
+
+    private static void ProcessUefiPs2KeyboardByte(byte scancode) {
+        if (scancode == 0 || scancode == 0xFA) return;
+        if (scancode == 0xE0) {
+            _uefiKeyboardExtended = true;
+            return;
+        }
+
+        bool released = (scancode & 0x80) != 0;
+        byte code = (byte)(scancode & 0x7F);
+        ConsoleKey key = ConsoleKey.None;
+
+        if (_uefiKeyboardExtended) {
+            switch (code) {
+                case 0x48: key = ConsoleKey.Up; break;
+                case 0x50: key = ConsoleKey.Down; break;
+                case 0x4B: key = ConsoleKey.Left; break;
+                case 0x4D: key = ConsoleKey.Right; break;
+                case 0x1C: key = ConsoleKey.Enter; break;
+                case 0x53: key = ConsoleKey.Delete; break;
+            }
+            _uefiKeyboardExtended = false;
+        } else {
+            switch (code) {
+                case 0x01: key = ConsoleKey.Escape; break;
+                case 0x1C: key = ConsoleKey.Enter; break;
+                case 0x39: key = ConsoleKey.F1; break; // Space acts as left click.
+                case 0x3B: key = ConsoleKey.F1; break;
+                case 0x3C: key = ConsoleKey.F2; break;
+                case 0x11: key = ConsoleKey.Up; break;    // W
+                case 0x1E: key = ConsoleKey.Left; break;  // A
+                case 0x1F: key = ConsoleKey.Down; break;  // S
+                case 0x20: key = ConsoleKey.Right; break; // D
+            }
+        }
+
+        if (key == ConsoleKey.None) return;
+
+        var info = new ConsoleKeyInfo {
+            Key = key,
+            KeyChar = '\0',
+            Modifiers = ConsoleModifiers.None,
+            KeyState = released ? ConsoleKeyState.Released : ConsoleKeyState.Pressed,
+            ScanCode = scancode
+        };
+        if (!_uefiKeyboardSeen) {
+            _uefiKeyboardSeen = true;
+            SerialChar('K'); SerialChar('E'); SerialChar('Y'); SerialChar('\n');
+        }
+        Keyboard.KeyInfo = info;
+        Keyboard.InvokeOnKeyChanged(info);
+        Kbd2Mouse.OnKeyChanged(info);
+    }
+
+    private static void ProcessUefiPs2MouseByte(byte data) {
+        if (data == 0xFA || data == 0xFE) return;
+
+        if (_uefiMousePhase == 0) {
+            if ((data & 0x08) == 0) return;
+            _uefiMouseB0 = data;
+            _uefiMousePhase = 1;
+            return;
+        }
+        if (_uefiMousePhase == 1) {
+            _uefiMouseB1 = data;
+            _uefiMousePhase = 2;
+            return;
+        }
+
+        byte b2 = data;
+        _uefiMousePhase = 0;
+
+        int dx = _uefiMouseB1;
+        int dy = b2;
+        if ((_uefiMouseB0 & 0x10) != 0) dx -= 256;
+        if ((_uefiMouseB0 & 0x20) != 0) dy -= 256;
+
+        int maxX = Framebuffer.Width > 0 ? Framebuffer.Width - 1 : 0;
+        int maxY = Framebuffer.Height > 0 ? Framebuffer.Height - 1 : 0;
+        Control.MousePosition.X = Math.Clamp(Control.MousePosition.X + dx, 0, maxX);
+        Control.MousePosition.Y = Math.Clamp(Control.MousePosition.Y - dy, 0, maxY);
+
+        MouseButtons buttons = MouseButtons.None;
+        if ((_uefiMouseB0 & 0x01) != 0) buttons |= MouseButtons.Left;
+        if ((_uefiMouseB0 & 0x02) != 0) buttons |= MouseButtons.Right;
+        if ((_uefiMouseB0 & 0x04) != 0) buttons |= MouseButtons.Middle;
+        if (!_uefiMouseSeen && (dx != 0 || dy != 0 || buttons != MouseButtons.None)) {
+            _uefiMouseSeen = true;
+            SerialChar('M'); SerialChar('O'); SerialChar('U'); SerialChar('\n');
+        }
+        Control.MouseButtons = buttons;
+    }
+
+    private static bool UefiPs2WaitInputClear() {
+        for (int i = 0; i < 10000; i++) {
+            if ((Native.In8(0x64) & 0x02) == 0) return true;
+            Native.Nop();
+        }
+        return false;
+    }
+
+    private static void UefiPs2MouseWrite(byte value) {
+        if (!UefiPs2WaitInputClear()) return;
+        Native.Out8(0x64, 0xD4);
+        if (!UefiPs2WaitInputClear()) return;
+        Native.Out8(0x60, value);
+
+        for (int i = 0; i < 10000; i++) {
+            byte status = Native.In8(0x64);
+            if ((status & 0x01) != 0) {
+                Native.In8(0x60);
+                return;
+            }
+            Native.Nop();
+        }
+    }
+
+    private static void UefiPs2Drain(int maxBytes) {
+        for (int i = 0; i < maxBytes; i++) {
+            byte status = Native.In8(0x64);
+            if ((status & 0x01) == 0) return;
+            Native.In8(0x60);
+        }
+    }
+
+    private static void DrawUefiCursor() {
+        uint* fb = GetUefiFramebuffer();
+        int fbW = Framebuffer.Width;
+        int fbH = Framebuffer.Height;
+        if (fb == null || fbW <= 0 || fbH <= 0) return;
+
+        if (_uefiCursorEverDrawn) {
+            RestoreUefiCursorArea(fb, fbW, fbH, _uefiCursorLastX, _uefiCursorLastY);
+        }
+
+        int x = Math.Clamp(Control.MousePosition.X, 0, fbW - 1);
+        int y = Math.Clamp(Control.MousePosition.Y, 0, fbH - 1);
+        bool pressed = (Control.MouseButtons & MouseButtons.Left) == MouseButtons.Left;
+        uint fill = pressed ? 0xFFFFD166u : 0xFFFFFFFFu;
+        uint edge = 0xFF000000u;
+
+        for (int yy = 0; yy < 18; yy++) {
+            for (int xx = 0; xx < 13; xx++) {
+                bool outline = xx == 0 || yy == 0 || xx == yy || (yy > 8 && xx == 5) || (yy > 8 && yy < 15 && xx == 6);
+                bool inside = xx < yy && xx < 9;
+                if (!outline && !inside) continue;
+                int px = x + xx;
+                int py = y + yy;
+                if ((uint)px >= (uint)fbW || (uint)py >= (uint)fbH) continue;
+                fb[py * fbW + px] = outline ? edge : fill;
+            }
+        }
+
+        _uefiCursorLastX = x;
+        _uefiCursorLastY = y;
+        _uefiCursorEverDrawn = true;
+    }
+
+    private static void RestoreUefiCursorArea(uint* fb, int fbW, int fbH, int x, int y) {
+        if (UefiCursorAreaTouchesUi(x, y, fbW, fbH)) {
+            DrawUefiReadyDesktop();
+            return;
+        }
+
+        for (int yy = y; yy < y + 20; yy++) {
+            if ((uint)yy >= (uint)fbH) continue;
+            int shade = (yy * 64) / fbH;
+            uint color = (uint)(0xFF102030 + (shade << 16) + (shade << 8));
+            if (yy < 58) color = 0xFF182836u;
+            if (yy >= fbH - 44) color = 0xFF151A22u;
+            if ((yy >= 58 && yy < 60) || (yy >= fbH - 46 && yy < fbH - 44)) color = 0xFF36C2B4u;
+
+            int row = yy * fbW;
+            for (int xx = x; xx < x + 16; xx++) {
+                if ((uint)xx >= (uint)fbW) continue;
+                fb[row + xx] = color;
+            }
+        }
+    }
+
+    private static bool UefiCursorAreaTouchesUi(int x, int y, int fbW, int fbH) {
+        int iconY = fbH > 260 ? 210 : 150;
+        if (y < 170) return true;
+        if (y + 20 >= fbH - 50) return true;
+        if (x < 310 && y + 20 >= iconY && y <= iconY + 92) return true;
+        return false;
+    }
+    private static void DrawUefiLauncher(uint* fb, int fbW, int fbH, int x, int y, uint color, string label) {
+        DrawUefiFillRect(fb, fbW, fbH, x, y, 58, 58, 0xFF203040u);
+        DrawUefiFillRect(fb, fbW, fbH, x + 8, y + 8, 42, 42, color);
+        DrawUefiFillRect(fb, fbW, fbH, x + 14, y + 18, 30, 4, 0xCCFFFFFFu);
+        DrawUefiFillRect(fb, fbW, fbH, x + 14, y + 30, 30, 4, 0xCCFFFFFFu);
+        DrawUefiTinyText(fb, fbW, fbH, x, y + 66, label, 2, 0xFFFFFFFFu);
+    }
+
+    private static void DrawUefiFillRect(uint* fb, int fbW, int fbH, int x, int y, int w, int h, uint color) {
+        int x0 = x < 0 ? 0 : x;
+        int y0 = y < 0 ? 0 : y;
+        int x1 = x + w;
+        int y1 = y + h;
+        if (x1 > fbW) x1 = fbW;
+        if (y1 > fbH) y1 = fbH;
+        if (x1 <= x0 || y1 <= y0) return;
+        for (int yy = y0; yy < y1; yy++) {
+            int row = yy * fbW;
+            for (int xx = x0; xx < x1; xx++) {
+                fb[row + xx] = color;
+            }
+        }
+    }
+
+    private static void DrawUefiTinyText(uint* fb, int fbW, int fbH, int x, int y, string text, int scale, uint color) {
+        int cursorX = x;
+        for (int i = 0; i < text.Length; i++) {
+            char c = text[i];
+            if (c == ' ') {
+                cursorX += 4 * scale;
+                continue;
+            }
+            DrawUefiGlyph(fb, fbW, fbH, cursorX, y, c, scale, color);
+            cursorX += 6 * scale;
+        }
+    }
+
+    private static void DrawUefiGlyph(uint* fb, int fbW, int fbH, int x, int y, char c, int scale, uint color) {
+        for (int row = 0; row < 7; row++) {
+            byte bits = UefiGlyphRow(c, row);
+            for (int col = 0; col < 5; col++) {
+                if ((bits & (1 << (4 - col))) == 0) continue;
+                DrawUefiFillRect(fb, fbW, fbH, x + col * scale, y + row * scale, scale, scale, color);
+            }
+        }
+    }
+
+    private static byte UefiGlyphRow(char c, int row) {
+        switch (c) {
+            case 'A': return row == 0 ? (byte)0x0E : row == 1 ? (byte)0x11 : row == 2 ? (byte)0x11 : row == 3 ? (byte)0x1F : row == 4 ? (byte)0x11 : row == 5 ? (byte)0x11 : (byte)0x11;
+            case 'B': return row == 0 ? (byte)0x1E : row == 1 ? (byte)0x11 : row == 2 ? (byte)0x11 : row == 3 ? (byte)0x1E : row == 4 ? (byte)0x11 : row == 5 ? (byte)0x11 : (byte)0x1E;
+            case 'C': return row == 0 ? (byte)0x0F : row == 1 ? (byte)0x10 : row == 2 ? (byte)0x10 : row == 3 ? (byte)0x10 : row == 4 ? (byte)0x10 : row == 5 ? (byte)0x10 : (byte)0x0F;
+            case 'D': return row == 0 ? (byte)0x1E : row == 1 ? (byte)0x11 : row == 2 ? (byte)0x11 : row == 3 ? (byte)0x11 : row == 4 ? (byte)0x11 : row == 5 ? (byte)0x11 : (byte)0x1E;
+            case 'E': return row == 0 ? (byte)0x1F : row == 1 ? (byte)0x10 : row == 2 ? (byte)0x10 : row == 3 ? (byte)0x1E : row == 4 ? (byte)0x10 : row == 5 ? (byte)0x10 : (byte)0x1F;
+            case 'F': return row == 0 ? (byte)0x1F : row == 1 ? (byte)0x10 : row == 2 ? (byte)0x10 : row == 3 ? (byte)0x1E : row == 4 ? (byte)0x10 : row == 5 ? (byte)0x10 : (byte)0x10;
+            case 'G': return row == 0 ? (byte)0x0F : row == 1 ? (byte)0x10 : row == 2 ? (byte)0x10 : row == 3 ? (byte)0x17 : row == 4 ? (byte)0x11 : row == 5 ? (byte)0x11 : (byte)0x0F;
+            case 'I': return row == 0 ? (byte)0x1F : row == 1 ? (byte)0x04 : row == 2 ? (byte)0x04 : row == 3 ? (byte)0x04 : row == 4 ? (byte)0x04 : row == 5 ? (byte)0x04 : (byte)0x1F;
+            case 'K': return row == 0 ? (byte)0x11 : row == 1 ? (byte)0x12 : row == 2 ? (byte)0x14 : row == 3 ? (byte)0x18 : row == 4 ? (byte)0x14 : row == 5 ? (byte)0x12 : (byte)0x11;
+            case 'L': return row == 0 ? (byte)0x10 : row == 1 ? (byte)0x10 : row == 2 ? (byte)0x10 : row == 3 ? (byte)0x10 : row == 4 ? (byte)0x10 : row == 5 ? (byte)0x10 : (byte)0x1F;
+            case 'M': return row == 0 ? (byte)0x11 : row == 1 ? (byte)0x1B : row == 2 ? (byte)0x15 : row == 3 ? (byte)0x15 : row == 4 ? (byte)0x11 : row == 5 ? (byte)0x11 : (byte)0x11;
+            case 'N': return row == 0 ? (byte)0x11 : row == 1 ? (byte)0x19 : row == 2 ? (byte)0x15 : row == 3 ? (byte)0x13 : row == 4 ? (byte)0x11 : row == 5 ? (byte)0x11 : (byte)0x11;
+            case 'O': return row == 0 ? (byte)0x0E : row == 1 ? (byte)0x11 : row == 2 ? (byte)0x11 : row == 3 ? (byte)0x11 : row == 4 ? (byte)0x11 : row == 5 ? (byte)0x11 : (byte)0x0E;
+            case 'P': return row == 0 ? (byte)0x1E : row == 1 ? (byte)0x11 : row == 2 ? (byte)0x11 : row == 3 ? (byte)0x1E : row == 4 ? (byte)0x10 : row == 5 ? (byte)0x10 : (byte)0x10;
+            case 'R': return row == 0 ? (byte)0x1E : row == 1 ? (byte)0x11 : row == 2 ? (byte)0x11 : row == 3 ? (byte)0x1E : row == 4 ? (byte)0x14 : row == 5 ? (byte)0x12 : (byte)0x11;
+            case 'S': return row == 0 ? (byte)0x0F : row == 1 ? (byte)0x10 : row == 2 ? (byte)0x10 : row == 3 ? (byte)0x0E : row == 4 ? (byte)0x01 : row == 5 ? (byte)0x01 : (byte)0x1E;
+            case 'T': return row == 0 ? (byte)0x1F : row == 1 ? (byte)0x04 : row == 2 ? (byte)0x04 : row == 3 ? (byte)0x04 : row == 4 ? (byte)0x04 : row == 5 ? (byte)0x04 : (byte)0x04;
+            case 'U': return row == 0 ? (byte)0x11 : row == 1 ? (byte)0x11 : row == 2 ? (byte)0x11 : row == 3 ? (byte)0x11 : row == 4 ? (byte)0x11 : row == 5 ? (byte)0x11 : (byte)0x0E;
+            case 'V': return row == 0 ? (byte)0x11 : row == 1 ? (byte)0x11 : row == 2 ? (byte)0x11 : row == 3 ? (byte)0x11 : row == 4 ? (byte)0x0A : row == 5 ? (byte)0x0A : (byte)0x04;
+            case 'X': return row == 0 ? (byte)0x11 : row == 1 ? (byte)0x11 : row == 2 ? (byte)0x0A : row == 3 ? (byte)0x04 : row == 4 ? (byte)0x0A : row == 5 ? (byte)0x11 : (byte)0x11;
+            case 'Y': return row == 0 ? (byte)0x11 : row == 1 ? (byte)0x11 : row == 2 ? (byte)0x0A : row == 3 ? (byte)0x04 : row == 4 ? (byte)0x04 : row == 5 ? (byte)0x04 : (byte)0x04;
+            default: return 0;
         }
     }
     /// <summary>

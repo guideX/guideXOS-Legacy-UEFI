@@ -1,3 +1,4 @@
+PS D:\dev\guideXOSUEFI> .\run_qemu.bat
 ========================================
    Booting guideXOS in QEMU
 ========================================
@@ -13,38 +14,37 @@ Starting QEMU...
 Press Ctrl+C in this window to exit QEMU
 Serial output will appear below:
 ----------------------------------------
-
-←[2J←[01;01H←[=3h←[2J←[01;01H←[2J←[01;01H←[=3h←[2J←[01;01H←[2J←[01;01H←[=3h←[2J←[01;01HBdsDxe: loading Boot0001 "UEFI QEMU HARDDISK QM00003 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Secondary,Master,0x0)
+BdsDxe: loading Boot0001 "UEFI QEMU HARDDISK QM00003 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Secondary,Master,0x0)
 BdsDxe: starting Boot0001 "UEFI QEMU HARDDISK QM00003 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Secondary,Master,0x0)
 guideXOS UEFI Bootloader
 ACPI RSDP found at 0x000000003F77E000, rev 0
 Simple Pointer Protocol found at 0x000000003E720170
 Absolute Pointer Protocol found at 0x000000003E7201C8
-ELF: vaddr range 0x10001000 - 0x10445600 (size 0x444600)
-ELF: Allocated 1093 pages at 0x3d77c000
-ELF: Loading seg 0: vaddr=0x10001000 -> phys=0x3d77c000 (filesz=0x1a00)
-ELF: Loading seg 1: vaddr=0x10003000 -> phys=0x3d77e000 (filesz=0x200)
-ELF: Loading seg 2: vaddr=0x10004000 -> phys=0x3d77f000 (filesz=0x8da00)
-ELF: Loading seg 3: vaddr=0x10092000 -> phys=0x3d80d000 (filesz=0x2fa00)
-ELF: Loading seg 4: vaddr=0x100c2000 -> phys=0x3d83d000 (filesz=0x37ba00)
-ELF: Loading seg 5: vaddr=0x1043f000 -> phys=0x3dbba000 (filesz=0x5000)
-ELF: Loading seg 6: vaddr=0x10444000 -> phys=0x3dbbf000 (filesz=0x200)
-ELF: Loading seg 7: vaddr=0x10445000 -> phys=0x3dbc0000 (filesz=0x600)
+ELF: vaddr range 0x10001000 - 0x10449600 (size 0x448600)
+ELF: Allocated 1097 pages at 0x3d772000
+ELF: Loading seg 0: vaddr=0x10001000 -> phys=0x3d772000 (filesz=0x1a00)
+ELF: Loading seg 1: vaddr=0x10003000 -> phys=0x3d774000 (filesz=0x200)
+ELF: Loading seg 2: vaddr=0x10004000 -> phys=0x3d775000 (filesz=0x90600)
+ELF: Loading seg 3: vaddr=0x10095000 -> phys=0x3d806000 (filesz=0x30400)
+ELF: Loading seg 4: vaddr=0x100c6000 -> phys=0x3d837000 (filesz=0x37bc00)
+ELF: Loading seg 5: vaddr=0x10443000 -> phys=0x3dbb4000 (filesz=0x5000)
+ELF: Loading seg 6: vaddr=0x10448000 -> phys=0x3dbb9000 (filesz=0x200)
+ELF: Loading seg 7: vaddr=0x10449000 -> phys=0x3dbba000 (filesz=0x600)
 ELF: Entry point in segment 2 (vaddr 0x10004000)
-ELF: Entry vaddr=0x1002bd0c, offset=0x2ad0c, physEntry=0x3d7a6d0c
-Kernel entry phys: 0x000000003D7A6D0C virt: 0x000000001002BD0C
-Kernel loaded at: 0x000000003D77C000 - 0x000000003DBC0600
+ELF: Entry vaddr=0x1002df04, offset=0x2cf04, physEntry=0x3d79ef04
+Kernel entry phys: 0x000000003D79EF04 virt: 0x000000001002DF04
+Kernel loaded at: 0x000000003D772000 - 0x000000003DBBA600
 Ramdisk size: 22473292 bytes
-Ramdisk loaded at 0x000000003C20D000
+Ramdisk loaded at 0x000000003C203000
 Stack allocated at 0x0000000000200000, top at 0x0000000000280000 (below kernel)
 Mapping stack: 0x0000000000200000 size 524288
-Mapping ramdisk: 0x000000003C20D000 size 22473292
+Mapping ramdisk: 0x000000003C203000 size 22473292
 Mapping ACPI RSDP region: 0x000000003F77E000
-Mapping bootloader: 0x000000003DBC1000 size 69632
+Mapping bootloader: 0x000000003DBBB000 size 69632
 Mapping allocator region: 0x4000000 size 1GB
 Mapping low memory region: 0x100000 size 4MB
 Building identity page tables with 11 ranges...
-Page tables built at PML4: 0x000000003DBDA000
+Page tables built at PML4: 0x000000003DE4E000
 Mapping framebuffer (uncached): 0x0000000080000000 size 4096000
 Mapping Local APIC MMIO (uncached): 0xFEE00000 size 4KB
 Mapping IOAPIC MMIO (uncached): 0xFEC00000 size 4KB
@@ -72,7 +72,7 @@ Magic: 0x49425847
 Framebuffer: 0x0000000080000000 (0x00000500x0x00000320)
 
 === Kernel Entry Validation ===
-Entry point: 0x000000003D7A6D0C
+Entry point: 0x000000003D79EF04
 First 16 bytes at entry:
   55 41 57 41 56 41 55 41 54 57 56 53 48 83 EC 58
   [OK] Looks like valid x64 function prologue
@@ -84,50 +84,50 @@ First 16 bytes at entry:
 ========================================
 
 --- Parameters ---
-Kernel Entry: 0x000000003D7A6D0C
-BootInfo:     0x000000003DBDD000
+Kernel Entry: 0x000000003D79EF04
+BootInfo:     0x000000003DE56000
 Stack Top:    0x0000000000280000
-PML4 Phys:    0x000000003DBDA000
+PML4 Phys:    0x000000003DE4E000
 
 --- Validating Mappings ---
 
 [1] Kernel Entry:
-Checking mapping for: 0x000000003D7A6D0C
-  PML4[0x00000000] = 0x000000003DBD9003
-  PDPT[0x00000000] = 0x000000003DBD8003
-  PD[0x000001EB] = 0x000000003DBD6003
-  PT[0x000001A6] = 0x000000003D7A6003
-  [OK] Maps to physical: 0x000000003D7A6000
+Checking mapping for: 0x000000003D79EF04
+  PML4[0x00000000] = 0x000000003DE4D003
+  PDPT[0x00000000] = 0x000000003DBD7003
+  PD[0x000001EB] = 0x000000003DBD5003
+  PT[0x0000019E] = 0x000000003D79E003
+  [OK] Maps to physical: 0x000000003D79E000
 
 [2] BootInfo:
-Checking mapping for: 0x000000003DBDD000
-  PML4[0x00000000] = 0x000000003DBD9003
-  PDPT[0x00000000] = 0x000000003DBD8003
-  PD[0x000001ED] = 0x000000003DBD4003
-  PT[0x000001DD] = 0x000000003DBDD003
-  [OK] Maps to physical: 0x000000003DBDD000
+Checking mapping for: 0x000000003DE56000
+  PML4[0x00000000] = 0x000000003DE4D003
+  PDPT[0x00000000] = 0x000000003DBD7003
+  PD[0x000001EF] = 0x000000003DBD1003
+  PT[0x00000056] = 0x000000003DE56003
+  [OK] Maps to physical: 0x000000003DE56000
 
 [3] Stack (top - 0x1000):
 Checking mapping for: 0x000000000027F000
-  PML4[0x00000000] = 0x000000003DBD9003
-  PDPT[0x00000000] = 0x000000003DBD8003
-  PD[0x00000001] = 0x000000003DBD3003
+  PML4[0x00000000] = 0x000000003DE4D003
+  PDPT[0x00000000] = 0x000000003DBD7003
+  PD[0x00000001] = 0x000000003DBD2003
   PT[0x0000007F] = 0x000000000027F003
   [OK] Maps to physical: 0x000000000027F000
 
 [4] PML4 self-mapping:
-Checking mapping for: 0x000000003DBDA000
-  PML4[0x00000000] = 0x000000003DBD9003
-  PDPT[0x00000000] = 0x000000003DBD8003
-  PD[0x000001ED] = 0x000000003DBD4003
-  PT[0x000001DA] = 0x000000003DBDA003
-  [OK] Maps to physical: 0x000000003DBDA000
+Checking mapping for: 0x000000003DE4E000
+  PML4[0x00000000] = 0x000000003DE4D003
+  PDPT[0x00000000] = 0x000000003DBD7003
+  PD[0x000001EF] = 0x000000003DBD1003
+  PT[0x0000004E] = 0x000000003DE4E003
+  [OK] Maps to physical: 0x000000003DE4E000
 
 [5] Framebuffer:
 Checking mapping for: 0x0000000080000000
-  PML4[0x00000000] = 0x000000003DBD9003
-  PDPT[0x00000002] = 0x000000003BFCE003
-  PD[0x00000000] = 0x000000003BFCD003
+  PML4[0x00000000] = 0x000000003DE4D003
+  PDPT[0x00000002] = 0x000000003BFC9003
+  PD[0x00000000] = 0x000000003BFC8003
   PT[0x00000000] = 0x000000008000001B
   [OK] Maps to physical: 0x0000000080000000
 
@@ -137,35 +137,35 @@ Checking mapping for: 0x0000000080000000
 
 
 [BOOT] Validating VIRTUAL kernel entry mapping:
-Checking mapping for: 0x000000001002BD0C
-  PML4[0x00000000] = 0x000000003DBD9003
-  PDPT[0x00000000] = 0x000000003DBD8003
-  PD[0x00000080] = 0x000000003C161003
-  PT[0x0000002B] = 0x000000003D7A6003
-  [OK] Maps to physical: 0x000000003D7A6000
+Checking mapping for: 0x000000001002DF04
+  PML4[0x00000000] = 0x000000003DE4D003
+  PDPT[0x00000000] = 0x000000003DBD7003
+  PD[0x00000080] = 0x000000003C15B003
+  PT[0x0000002D] = 0x000000003D79E003
+  [OK] Maps to physical: 0x000000003D79E000
 [BOOT] About to handoff via trampoline...
-[BOOT] Trampoline at: 0x000000003DBDB000
-[BOOT] Kernel entry: 0x000000003D7A6D0C
-[BOOT] BootInfo at: 0x000000003DBDD000
+[BOOT] Trampoline at: 0x000000003DE4F000
+[BOOT] Kernel entry: 0x000000003D79EF04
+[BOOT] BootInfo at: 0x000000003DE56000
 [BOOT] Stack top: 0x0000000000280000
-[BOOT] PML4: 0x000000003DBDA000
+[BOOT] PML4: 0x000000003DE4E000
 
 [BOOT] Validating trampoline mapping:
-Checking mapping for: 0x000000003DBDB000
-  PML4[0x00000000] = 0x000000003DBD9003
-  PDPT[0x00000000] = 0x000000003DBD8003
-  PD[0x000001ED] = 0x000000003DBD4003
-  PT[0x000001DB] = 0x000000003DBDB003
-  [OK] Maps to physical: 0x000000003DBDB000
+Checking mapping for: 0x000000003DE4F000
+  PML4[0x00000000] = 0x000000003DE4D003
+  PDPT[0x00000000] = 0x000000003DBD7003
+  PD[0x000001EF] = 0x000000003DBD1003
+  PT[0x0000004F] = 0x000000003DE4F003
+  [OK] Maps to physical: 0x000000003DE4F000
 
 [BOOT] === CALLING TRAMPOLINE NOW ===
 [BOOT] Jumping to VIRTUAL entry point
-T3SJ1002BD0C
+T3SJ1002DF04
 FG
-PRE000000003D7A6023
+PRE000000003D79E023
 *+B000000000027FFE0
 !C00000668
-D@WIYZ>S0038T000000001002BD0C
+D@WIYZ>S0038T000000001002DF04
 !K4155415641574155
 X#
 ^
@@ -173,7 +173,7 @@ K![KMAIN] INITIALIZE
 [FRAMEBUFFER] INITIALIZE
 [ALLOCATOR] INITIALIZE
 [MOD] INITIALIZE
-10444000[ASC] INIT
+10448000[ASC] INIT
 [FBI] INIT
 [BS] INIT
 [RUNTIME] ALLOCATE TEST PASS
@@ -212,7 +212,7 @@ vm1vmSKIP[EBS] Marking ExitBootServices as occurred
 [MouseInputManager] UEFI boot info received
 [MouseInputManager] BootInfo hex dump (input protocol region):
 [MouseInputManager] Bytes at offset 0x68-0x97 (Ramdisk + Input Protocols):
-  0x68: 00 D0 20 3C 00 00 00 00 4C EA 56 01 00 00 00 00
+  0x68: 00 30 20 3C 00 00 00 00 4C EA 56 01 00 00 00 00
   0x78: 70 01 72 3E 00 00 00 00 C8 01 72 3E 00 00 00 00
   0x88: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 [MouseInputManager] Raw uint64 at offset 0x78 (SimplePointerProtocol): 0x000000003E720170
@@ -245,35 +245,15 @@ TP4
 TP5
 TP6
 STI-
-IRQ0
-TOK
-SCH
-EOI
-IRQ0
-TOK
-SCH
-EOI
 OK
 RET
-TPRETIRQ0
-TOK
-SCH
-EOI
-IRQ0
-TOK
-SCH
-EOI
-
-[SCHED] ThreadPool.Initialize compleIRQ0
-TOK
-SCH
-EOI
-te
+TPRET
+[SCHED] ThreadPool.Initialize complete
 [APIC] STI (Local APIC timer active)
 [BOOT] Post-STI continue
 [BOOT] About to cleanup splash
 [Initrd] Initializing Ramdisk
-RD@000000003C20D000
+RD@000000003C203000
 DIR:5244534B01000000ED01000009005245
 [Initrd] RDSK magic found directly!
 [Ramdisk] Constructor called
@@ -316,7 +296,7 @@ MCDOK
 [INPUT] Mouse detection complete
 [INPUT] Mouse enabled: True
 [FS] Re-mounting filesystem for UEFI
-[FS] RawBasePointer = 1008783360
+[FS] RawBasePointer = 1008742400
 [FS] Reconstructing Ramdisk from RawBasePointer
 [Ramdisk] Constructor called
 [Ramdisk] ptr field set
@@ -366,6 +346,14 @@ MCDOK
 [F1:A]BF1
 C[MouseEventDispatcher] Initialized
 [MouseEventDispatcher] Initialized
-DEF[FB:1280x0800]GHIJKLZ
+INP
+DEF[FB:0000x0000]GHUID
+IJKLZ
 [F2:A]BCDEFGHIJKLZ
 [F3:A]BCDEFGHIJKLZ
+READY
+
+----------------------------------------
+QEMU exited.
+Press any key to continue . . .
+PS D:\dev\guideXOSUEFI>

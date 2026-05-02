@@ -4,6 +4,7 @@ using System.Windows.Forms;
 using System.Collections.Generic;
 using System;
 using guideXOS.GUI;
+using System.Drawing;
 namespace guideXOS.DefaultApps {
     /// <summary>
     /// Computer Files Window
@@ -53,6 +54,11 @@ namespace guideXOS.DefaultApps {
         private List<FileInfo> _entriesCache;
         private string _entriesCacheFor;
         private bool _entriesDirty;
+
+        private bool _leftWasDown;
+        private int _lastClickIndex = -1;
+        private ulong _lastClickTicks;
+        private const ulong DoubleClickTicks = 500;
 
         // Search
         private string _search = string.Empty;
@@ -189,6 +195,43 @@ namespace guideXOS.DefaultApps {
         }
 
         private void MarkEntriesDirty() { _entriesDirty = true; }
+
+        private bool IsDoubleClick(int index, bool leftDown) {
+            if (!leftDown) {
+                _leftWasDown = false;
+                return false;
+            }
+
+            if (_leftWasDown) return false;
+            _leftWasDown = true;
+
+            ulong now = Timer.Ticks;
+            bool doubleClick = _lastClickIndex == index && now >= _lastClickTicks && now - _lastClickTicks <= DoubleClickTicks;
+            _lastClickIndex = index;
+            _lastClickTicks = now;
+            return doubleClick;
+        }
+
+        private string CombinePath(string directory, string name) {
+            if (string.IsNullOrEmpty(directory)) return name;
+            if (directory.EndsWith("/")) return directory + name;
+            return directory + "/" + name;
+        }
+
+        private void OpenFileInNotepad(string name, int x, int y) {
+            FileSystem previous = null;
+            if (_fs != null) {
+                previous = File.Instance;
+                File.Instance = _fs;
+            }
+            var notepad = new Notepad(x + 40, y + 40);
+            notepad.OpenFile(CombinePath(_currentPath, name));
+            if (_fs != null) {
+                File.Instance = previous;
+            }
+            WindowManager.MoveToEnd(notepad);
+            notepad.Visible = true;
+        }
 
         private void PushHistory(string path) {
             // Truncate forward history
@@ -455,16 +498,18 @@ namespace guideXOS.DefaultApps {
                         int gy = contentY + gridY * tileH + pad - _scroll;
                         if (gy + tileH < contentY || gy > contentY + contentH) continue;
                         if (mx >= gx && mx <= gx + icon && my >= gy && my <= gy + icon) {
+                            if (!IsDoubleClick(i, true)) return;
                             bool isDir = list[i].Attribute == FileAttribute.Directory;
                             if (isDir) { // open directory
                                 string newPath = _currentPath + name + "/"; _currentPath = newPath; PushHistory(_currentPath); _scroll = 0; MarkEntriesDirty(); return;
                             } else { // open file via Desktop handler
-                                Desktop.Dir = _currentPath; Desktop.OnClick(name, false, gx, gy); return;
+                                OpenFileInNotepad(name, gx, gy); return;
                             }
                         }
                     }
                 }
             } else {
+                _leftWasDown = false;
                 _scrollDrag = false;
             }
 
