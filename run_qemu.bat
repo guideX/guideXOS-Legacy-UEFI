@@ -62,6 +62,7 @@ REM NOTE:
 REM Use QEMU's FAT block device and attach it as a real drive.
 
 "C:\Program Files\qemu\qemu-system-x86_64.exe" ^
+-machine pc ^
 -drive if=pflash,format=raw,readonly=on,file=OVMF.fd ^
 -drive if=none,id=esp,format=raw,file=fat:rw:ESP ^
 -device ide-hd,drive=esp ^
