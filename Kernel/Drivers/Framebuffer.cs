@@ -1,4 +1,5 @@
 using guideXOS.Graph;
+using guideXOS.Misc;
 using System.Windows.Forms;
 namespace guideXOS.Kernel.Drivers {
     /// <summary>
@@ -13,6 +14,13 @@ namespace guideXOS.Kernel.Drivers {
         /// Height
         /// </summary>
         public static ushort Height;
+        /// <summary>
+        /// Original Width/Height from UEFI boot info. These are used to recover
+        /// dimensions if managed static fields are cleared during early UEFI boot.
+        /// </summary>
+        public static ushort OriginalWidth;
+        public static ushort OriginalHeight;
+        public static UefiBootInfo* OriginalBootInfo;
         /// <summary>
         /// Video Memory - stored as a plain static field (NOT an auto-property)
         /// so the raw pointer value survives UEFI managed reference corruption.
@@ -71,6 +79,7 @@ namespace guideXOS.Kernel.Drivers {
         /// framebuffer address.
         /// </summary>
         public static void EnsureGraphics() {
+            RecoverUefiState();
             // STEP 1: If OriginalVideoMemory is set, always trust it over VideoMemory.
             // VideoMemory can get corrupted in UEFI mode; OriginalVideoMemory never changes.
             if ((ulong)OriginalVideoMemory != 0) {
@@ -88,6 +97,34 @@ namespace guideXOS.Kernel.Drivers {
             // STEP 4: Recreate Graphics from scratch.
             if ((ulong)VideoMemory == 0 || Width == 0 || Height == 0) return;
             Graphics = new Graphics(Width, Height, VideoMemory);
+        }
+
+        public static void SetBootInfo(UefiBootInfo* bootInfo) {
+            OriginalBootInfo = bootInfo;
+        }
+
+        public static void RecoverUefiState() {
+            if (OriginalBootInfo != null) {
+                if ((ulong)OriginalVideoMemory == 0 && OriginalBootInfo->FramebufferBase != 0) {
+                    OriginalVideoMemory = (uint*)OriginalBootInfo->FramebufferBase;
+                }
+                if (OriginalWidth == 0 && OriginalBootInfo->FramebufferWidth != 0) {
+                    OriginalWidth = (ushort)OriginalBootInfo->FramebufferWidth;
+                }
+                if (OriginalHeight == 0 && OriginalBootInfo->FramebufferHeight != 0) {
+                    OriginalHeight = (ushort)OriginalBootInfo->FramebufferHeight;
+                }
+            }
+
+            if (Width == 0 && OriginalWidth != 0) {
+                Width = OriginalWidth;
+            }
+            if (Height == 0 && OriginalHeight != 0) {
+                Height = OriginalHeight;
+            }
+            if ((ulong)VideoMemory == 0 && (ulong)OriginalVideoMemory != 0) {
+                VideoMemory = OriginalVideoMemory;
+            }
         }
 
         public static void Update() {
@@ -109,6 +146,8 @@ namespace guideXOS.Kernel.Drivers {
         public static void Initialize(ushort XRes, ushort YRes, uint* FB) {
             Width = XRes;
             Height = YRes;
+            OriginalWidth = XRes;
+            OriginalHeight = YRes;
             VideoMemory = FB; // Video memory must be set before any operation that might clear/draw
             OriginalVideoMemory = FB; // Permanent backup - NEVER overwritten
             FirstBuffer = (uint*)Allocator.Allocate((ulong)(XRes * YRes * 4));

@@ -101,6 +101,8 @@ unsafe class Program {
     /// </summary>
     private static bool _uefiInputInitialized = false;
     private static bool _uefiKeyboardExtended = false;
+    private static bool _uefiKeyboardBreakPending = false;
+    private static bool _uefiKeyboardSet2 = false;
     private static int _uefiMousePhase = 0;
     private static byte _uefiMouseB0 = 0;
     private static byte _uefiMouseB1 = 0;
@@ -109,6 +111,9 @@ unsafe class Program {
     private static bool _uefiCursorEverDrawn = false;
     private static bool _uefiKeyboardSeen = false;
     private static bool _uefiMouseSeen = false;
+    private static bool _uefiAnyInputByteSeen = false;
+    private static bool _uefiSerialSeen = false;
+    private static bool _uefiUnknownKeySeen = false;
     #endregion
     /// <summary>
     /// USB Mouse Test
@@ -506,6 +511,7 @@ unsafe class Program {
     /// </summary>
     private static void SMainSetupUefi() {
         BootConsole.WriteLine("[SMAIN] UEFI MODE");
+        Framebuffer.RecoverUefiState();
         BootConsole.WriteLine("[SMAIN] UEFI mode - disabling triple buffering");
         Framebuffer.TripleBuffered = false;
         // CRITICAL: In UEFI mode, static managed object references (like Framebuffer.Graphics
@@ -1111,12 +1117,19 @@ unsafe class Program {
             InitializeUefiInput();
         }
 
-        for (int i = 0; i < 16; i++) {
+        Framebuffer.RecoverUefiState();
+        PollUefiSerialInput();
+
+        for (int i = 0; i < 32; i++) {
             byte status = Native.In8(0x64);
             if ((status & 0x01) == 0) return;
 
             bool fromMouse = (status & 0x20) != 0;
             byte data = Native.In8(0x60);
+            if (!_uefiAnyInputByteSeen) {
+                _uefiAnyInputByteSeen = true;
+                SerialChar('D'); SerialChar('A'); SerialChar('T'); SerialChar('\n');
+            }
             if (fromMouse) {
                 ProcessUefiPs2MouseByte(data);
             } else {
@@ -1129,76 +1142,132 @@ unsafe class Program {
         _uefiInputInitialized = true;
         _uefiMousePhase = 0;
         _uefiKeyboardExtended = false;
+        _uefiKeyboardBreakPending = false;
+        _uefiKeyboardSet2 = false;
 
+        Framebuffer.RecoverUefiState();
         if (Framebuffer.Width > 0 && Framebuffer.Height > 0) {
             Control.MousePosition.X = Framebuffer.Width / 2;
             Control.MousePosition.Y = Framebuffer.Height / 2;
         }
         Control.MouseButtons = MouseButtons.None;
 
-        UefiPs2Drain(32);
-        UefiPs2WaitInputClear();
-        Native.Out8(0x64, 0xA8); // Enable auxiliary PS/2 mouse port.
-        UefiPs2MouseWrite(0xF6); // Set defaults.
-        UefiPs2MouseWrite(0xF4); // Enable streaming packets.
-        UefiPs2Drain(32);
+        UefiPs2Drain(64);
+        bool configRead = UefiPs2ReadConfig(out byte config);
+        if (configRead) {
+            config &= 0xFC; // IRQs stay disabled; we poll instead.
+            config &= unchecked((byte)~0x30); // Enable keyboard and aux clocks.
+            config |= 0x40; // Translate keyboard set 2 to set 1 when supported.
+            UefiPs2WriteConfig(config);
+        }
 
-        SerialChar('I'); SerialChar('N'); SerialChar('P'); SerialChar('\n');
+        if (UefiPs2WaitInputClear()) Native.Out8(0x64, 0xAE); // Enable keyboard port.
+        if (UefiPs2WaitInputClear()) Native.Out8(0x64, 0xA8); // Enable auxiliary PS/2 mouse port.
+        UefiPs2Drain(64);
+
+        UefiPs2KeyboardWrite(0xF6); // Keyboard defaults.
+        UefiPs2KeyboardWrite(0xF4); // Enable keyboard scanning.
+        UefiPs2MouseWrite(0xF6); // Mouse defaults.
+        UefiPs2MouseWrite(0xF4); // Enable mouse streaming packets.
+        UefiPs2Drain(64);
+
+        SerialChar('I'); SerialChar('N'); SerialChar('P');
+        SerialChar(configRead ? 'C' : 'N');
+        SerialChar('\n');
     }
 
     private static void ProcessUefiPs2KeyboardByte(byte scancode) {
-        if (scancode == 0 || scancode == 0xFA) return;
+        if (scancode == 0 || scancode == 0xFA || scancode == 0xFE) return;
         if (scancode == 0xE0) {
             _uefiKeyboardExtended = true;
             return;
         }
+        if (scancode == 0xF0) {
+            _uefiKeyboardBreakPending = true;
+            _uefiKeyboardSet2 = true;
+            return;
+        }
 
-        bool released = (scancode & 0x80) != 0;
-        byte code = (byte)(scancode & 0x7F);
-        ConsoleKey key = ConsoleKey.None;
-
-        if (_uefiKeyboardExtended) {
-            switch (code) {
-                case 0x48: key = ConsoleKey.Up; break;
-                case 0x50: key = ConsoleKey.Down; break;
-                case 0x4B: key = ConsoleKey.Left; break;
-                case 0x4D: key = ConsoleKey.Right; break;
-                case 0x1C: key = ConsoleKey.Enter; break;
-                case 0x53: key = ConsoleKey.Delete; break;
-            }
-            _uefiKeyboardExtended = false;
+        bool released;
+        byte code;
+        if (_uefiKeyboardBreakPending) {
+            released = true;
+            code = scancode;
+            _uefiKeyboardBreakPending = false;
+            _uefiKeyboardSet2 = true;
+        } else if (_uefiKeyboardSet2) {
+            released = false;
+            code = scancode;
         } else {
-            switch (code) {
-                case 0x01: key = ConsoleKey.Escape; break;
-                case 0x1C: key = ConsoleKey.Enter; break;
-                case 0x39: key = ConsoleKey.F1; break; // Space acts as left click.
-                case 0x3B: key = ConsoleKey.F1; break;
-                case 0x3C: key = ConsoleKey.F2; break;
-                case 0x11: key = ConsoleKey.Up; break;    // W
-                case 0x1E: key = ConsoleKey.Left; break;  // A
-                case 0x1F: key = ConsoleKey.Down; break;  // S
-                case 0x20: key = ConsoleKey.Right; break; // D
+            released = (scancode & 0x80) != 0;
+            code = (byte)(scancode & 0x7F);
+        }
+
+        ConsoleKey key = MapUefiKeyboardCode(code, _uefiKeyboardExtended, _uefiKeyboardSet2);
+        _uefiKeyboardExtended = false;
+
+        if (key == ConsoleKey.None) {
+            if (!_uefiUnknownKeySeen) {
+                _uefiUnknownKeySeen = true;
+                SerialChar('U'); SerialChar('N'); SerialChar('K'); SerialChar('\n');
             }
+            return;
         }
 
-        if (key == ConsoleKey.None) return;
-
-        var info = new ConsoleKeyInfo {
-            Key = key,
-            KeyChar = '\0',
-            Modifiers = ConsoleModifiers.None,
-            KeyState = released ? ConsoleKeyState.Released : ConsoleKeyState.Pressed,
-            ScanCode = scancode
-        };
-        if (!_uefiKeyboardSeen) {
-            _uefiKeyboardSeen = true;
-            SerialChar('K'); SerialChar('E'); SerialChar('Y'); SerialChar('\n');
-        }
-        Keyboard.KeyInfo = info;
-        Keyboard.InvokeOnKeyChanged(info);
-        Kbd2Mouse.OnKeyChanged(info);
+        DispatchUefiKey(key, released ? ConsoleKeyState.Released : ConsoleKeyState.Pressed, scancode);
     }
 
+    private static ConsoleKey MapUefiKeyboardCode(byte code, bool extended, bool set2) {
+        if (set2) {
+            if (extended) {
+                switch (code) {
+                    case 0x75: return ConsoleKey.Up;
+                    case 0x72: return ConsoleKey.Down;
+                    case 0x6B: return ConsoleKey.Left;
+                    case 0x74: return ConsoleKey.Right;
+                    case 0x5A: return ConsoleKey.Enter;
+                    case 0x71: return ConsoleKey.Delete;
+                }
+            } else {
+                switch (code) {
+                    case 0x76: return ConsoleKey.Escape;
+                    case 0x5A: return ConsoleKey.Enter;
+                    case 0x29: return ConsoleKey.F1; // Space acts as left click.
+                    case 0x05: return ConsoleKey.F1;
+                    case 0x06: return ConsoleKey.F2;
+                    case 0x1D: return ConsoleKey.Up;    // W
+                    case 0x1C: return ConsoleKey.Left;  // A
+                    case 0x1B: return ConsoleKey.Down;  // S
+                    case 0x23: return ConsoleKey.Right; // D
+                }
+            }
+        }
+
+        if (extended) {
+            switch (code) {
+                case 0x48: return ConsoleKey.Up;
+                case 0x50: return ConsoleKey.Down;
+                case 0x4B: return ConsoleKey.Left;
+                case 0x4D: return ConsoleKey.Right;
+                case 0x1C: return ConsoleKey.Enter;
+                case 0x53: return ConsoleKey.Delete;
+            }
+        } else {
+            switch (code) {
+                case 0x01: return ConsoleKey.Escape;
+                case 0x1C: return ConsoleKey.Enter;
+                case 0x39: return ConsoleKey.F1; // Space acts as left click.
+                case 0x3B: return ConsoleKey.F1;
+                case 0x3C: return ConsoleKey.F2;
+                case 0x11: return ConsoleKey.Up;    // W
+                case 0x1E: return ConsoleKey.Left;  // A
+                case 0x1F: return ConsoleKey.Down;  // S
+                case 0x20: return ConsoleKey.Right; // D
+            }
+        }
+
+        return ConsoleKey.None;
+    }
     private static void ProcessUefiPs2MouseByte(byte data) {
         if (data == 0xFA || data == 0xFE) return;
 
@@ -1246,6 +1315,87 @@ unsafe class Program {
         return false;
     }
 
+    private static void PollUefiSerialInput() {
+        for (int i = 0; i < 8; i++) {
+            if ((Native.In8(0x3FD) & 0x01) == 0) return;
+            byte b = Native.In8(0x3F8);
+            ConsoleKey key = ConsoleKey.None;
+            switch (b) {
+                case (byte)'w': case (byte)'W': key = ConsoleKey.Up; break;
+                case (byte)'s': case (byte)'S': key = ConsoleKey.Down; break;
+                case (byte)'a': case (byte)'A': key = ConsoleKey.Left; break;
+                case (byte)'d': case (byte)'D': key = ConsoleKey.Right; break;
+                case (byte)' ': case (byte)'j': case (byte)'J': key = ConsoleKey.F1; break;
+                case (byte)'k': case (byte)'K': key = ConsoleKey.F2; break;
+            }
+            if (key == ConsoleKey.None) continue;
+            if (!_uefiSerialSeen) {
+                _uefiSerialSeen = true;
+                SerialChar('S'); SerialChar('E'); SerialChar('R'); SerialChar('\n');
+            }
+            DispatchUefiKey(key, ConsoleKeyState.Pressed, b);
+            DispatchUefiKey(key, ConsoleKeyState.Released, b);
+        }
+    }
+
+    private static void DispatchUefiKey(ConsoleKey key, ConsoleKeyState state, byte scanCode) {
+        var info = new ConsoleKeyInfo {
+            Key = key,
+            KeyChar = '\0',
+            Modifiers = ConsoleModifiers.None,
+            KeyState = state,
+            ScanCode = scanCode
+        };
+        if (!_uefiKeyboardSeen) {
+            _uefiKeyboardSeen = true;
+            SerialChar('K'); SerialChar('E'); SerialChar('Y'); SerialChar('\n');
+        }
+        Keyboard.KeyInfo = info;
+        Keyboard.InvokeOnKeyChanged(info);
+        Kbd2Mouse.OnKeyChanged(info);
+    }
+
+    private static bool UefiPs2ReadConfig(out byte config) {
+        config = 0;
+        if (!UefiPs2WaitInputClear()) return false;
+        Native.Out8(0x64, 0x20);
+        for (int i = 0; i < 10000; i++) {
+            if ((Native.In8(0x64) & 0x01) != 0) {
+                config = Native.In8(0x60);
+                return true;
+            }
+            Native.Nop();
+        }
+        return false;
+    }
+
+    private static void UefiPs2WriteConfig(byte config) {
+        if (!UefiPs2WaitInputClear()) return;
+        Native.Out8(0x64, 0x60);
+        if (!UefiPs2WaitInputClear()) return;
+        Native.Out8(0x60, config);
+    }
+
+    private static void UefiPs2KeyboardWrite(byte value) {
+        if (!UefiPs2WaitInputClear()) return;
+        Native.Out8(0x60, value);
+        UefiPs2ReadAndDiscardAck(false);
+    }
+
+    private static void UefiPs2ReadAndDiscardAck(bool requireMouseSource) {
+        for (int i = 0; i < 10000; i++) {
+            byte status = Native.In8(0x64);
+            if ((status & 0x01) != 0) {
+                if (!requireMouseSource || (status & 0x20) != 0) {
+                    Native.In8(0x60);
+                    return;
+                }
+                Native.In8(0x60);
+                return;
+            }
+            Native.Nop();
+        }
+    }
     private static void UefiPs2MouseWrite(byte value) {
         if (!UefiPs2WaitInputClear()) return;
         Native.Out8(0x64, 0xD4);

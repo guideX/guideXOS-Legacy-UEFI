@@ -145,6 +145,7 @@ namespace guideXOS.Misc {
             BootConsole.WriteLine("[FBI] INIT");
             // Initialize framebuffer wrapper
             if (bootInfo->HasFramebuffer && bootInfo->FramebufferBase != 0) {
+                Framebuffer.SetBootInfo(bootInfo);
                 Framebuffer.Initialize(
                     (ushort)bootInfo->FramebufferWidth,
                     (ushort)bootInfo->FramebufferHeight,
