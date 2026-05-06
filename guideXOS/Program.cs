@@ -328,7 +328,7 @@ unsafe class Program {
             // Initialize legacy PS/2 input first so VirtualBox (default PS/2 devices) works out-of-the-box.
             // This provides keyboard IRQ1 (0x21) and mouse IRQ12 (0x2C) handling even without USB HID.
             try { PS2Keyboard.Initialize(); } catch { }
-            try { PS2Mouse.Initialize(); } catch { }
+            try { PS2Mouse.Initialize(); PS2Mouse.EnableFullProcessing(); } catch { }
             // Initialize VMware absolute pointer backdoor if present (no-op on other hypervisors)
             try { VMwareTools.Initialize(); } catch { }
 #if USBDebug

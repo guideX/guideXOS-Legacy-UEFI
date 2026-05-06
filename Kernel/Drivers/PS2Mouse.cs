@@ -111,6 +111,7 @@ namespace guideXOS.Kernel.Drivers {
             BootConsole.WriteLine("MS1");
             
             MData = new byte[4];
+            Phase = 1;
 
             BootConsole.WriteLine("MS2");
 
@@ -266,11 +267,6 @@ namespace guideXOS.Kernel.Drivers {
                 Phase = 3;
             } else if (Phase == 3) {
                 MData[2] = D;
-                Phase = 4; // Move to phase 4 for the Z-axis byte
-            }
-            else if (Phase == 4)
-            {
-                MData[3] = D;
                 Phase = 1;
                 PacketCount++; // Count completed packets
 
@@ -344,9 +340,7 @@ namespace guideXOS.Kernel.Drivers {
                     aY = Math.Clamp(aY, -MaxDeltaPerPacket, MaxDeltaPerPacket);
                 }
 
-                // The 4th byte is the scroll wheel movement.
-                sbyte wheel = (sbyte)MData[3];
-                DeltaZ = wheel;
+                DeltaZ = 0;
 
                 // Additional sanity check: if both deltas are at their maximum (likely corrupted packet), ignore movement
                 if (EnableTouchpadFiltering && Math.Abs(aX) >= MaxDeltaPerPacket && Math.Abs(aY) >= MaxDeltaPerPacket) {
