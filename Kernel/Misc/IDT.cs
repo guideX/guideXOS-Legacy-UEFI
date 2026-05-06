@@ -200,6 +200,7 @@ public static class IDT {
             return;
         }
 
+        Interrupts.HandleInterrupt(irq);
         Interrupts.EndOfInterrupt((byte)irq);
     }
 }

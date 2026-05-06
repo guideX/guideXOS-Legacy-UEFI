@@ -116,6 +116,13 @@ namespace guideXOS.Kernel.Drivers {
                 }
             }
 
+            if (OriginalWidth == 0 && Graphics != null && Graphics.Width > 0) {
+                OriginalWidth = (ushort)Graphics.Width;
+            }
+            if (OriginalHeight == 0 && Graphics != null && Graphics.Height > 0) {
+                OriginalHeight = (ushort)Graphics.Height;
+            }
+
             if (Width == 0 && OriginalWidth != 0) {
                 Width = OriginalWidth;
             }
