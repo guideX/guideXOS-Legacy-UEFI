@@ -1273,6 +1273,7 @@ unsafe class Program {
 
         if (_uefiMousePhase == 0) {
             if ((data & 0x08) == 0) return;
+            if ((data & 0xC0) != 0) return;
             _uefiMouseB0 = data;
             _uefiMousePhase = 1;
             return;
@@ -1290,6 +1291,9 @@ unsafe class Program {
         int dy = b2;
         if ((_uefiMouseB0 & 0x10) != 0) dx -= 256;
         if ((_uefiMouseB0 & 0x20) != 0) dy -= 256;
+
+        dx = Math.Clamp(dx, -32, 32);
+        dy = Math.Clamp(dy, -32, 32);
 
         int maxX = Framebuffer.Width > 0 ? Framebuffer.Width - 1 : 0;
         int maxY = Framebuffer.Height > 0 ? Framebuffer.Height - 1 : 0;
@@ -1421,6 +1425,7 @@ unsafe class Program {
     }
 
     private static void DrawUefiCursor() {
+        Framebuffer.RecoverUefiState();
         uint* fb = GetUefiFramebuffer();
         int fbW = Framebuffer.Width;
         int fbH = Framebuffer.Height;
@@ -1454,11 +1459,6 @@ unsafe class Program {
     }
 
     private static void RestoreUefiCursorArea(uint* fb, int fbW, int fbH, int x, int y) {
-        if (UefiCursorAreaTouchesUi(x, y, fbW, fbH)) {
-            DrawUefiReadyDesktop();
-            return;
-        }
-
         for (int yy = y; yy < y + 20; yy++) {
             if ((uint)yy >= (uint)fbH) continue;
             int shade = (yy * 64) / fbH;
